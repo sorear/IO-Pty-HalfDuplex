@@ -42,7 +42,9 @@ my $pty = new_ok('IO::Pty::HalfDuplex');
 
 ok(!$pty->is_active, "pty starts inactive");
 
-$pty->spawn (sub { print ((eval(<$comm_read>) || $@), "\n") while 1; });
+$pty->spawn (sub {
+    print $val_write ((eval(<$comm_read>) || $@), "\n") while 1;
+});
 
 is(query('2 + 2'), 4,                  "mock slave is functional for success");
 is(query('die "moo"'), "moo",          "mock slave is functional for failure");

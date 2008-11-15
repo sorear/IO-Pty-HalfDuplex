@@ -120,8 +120,6 @@ sub _slave {
         die "Cannot fork: $!\n";
     }
 
-    syswrite $statpipe, pack('l', $cpid);
-
     if (!$cpid) {
         # Child
 
@@ -129,6 +127,7 @@ sub _slave {
 
         setpgrp;
 
+        syswrite $statpipe, pack('l', $$);
         # For the benefit of tests
         if (@args == 1 && ref $args[0] eq 'CODE') {
             close $statpipe;
