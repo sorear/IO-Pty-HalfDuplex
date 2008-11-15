@@ -1,7 +1,7 @@
 use inc::Module::Install;
 
-name     'IO-HalfDuplex';
-all_from 'lib/IO/HalfDuplex.pm';
+name     'IO-Pty-HalfDuplex';
+all_from 'lib/IO/Pty/HalfDuplex.pm';
 
 build_requires 'Test::More';
 

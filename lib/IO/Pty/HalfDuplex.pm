@@ -1,10 +1,11 @@
 #!/usr/bin/env perl
-package IO::HalfDuplex;
+package IO::Pty::HalfDuplex;
 use strict;
 use warnings;
+use POSIX qw(:unistd_h :sys_wait_h :signal_h);
+use IO::Pty::Easy;
 
 our $VERSION = '0.01';
-use POSIX qw(:unistd_h :sys_wait_h :signal_h);
 
 sub _slave {
     my ($inpipe, $outpipe, @args) = @_;
@@ -55,9 +56,8 @@ sub _slave {
         # Slave is blocked.  Is there any unread input? {{{
         my $more;
         {
-            my $ivec = '';
+            my $ivec = "\1";
 
-            vec($ivec, 0, 1) = 1;
             ($more = select $ivec, undef, undef, 0) >= 0 or
                 die "select failed: $!\n";
         }
@@ -87,8 +87,6 @@ sub _slave {
         # }}}
     }
 }
-
-# Documentation {{{
 
 =head1 NAME
 
