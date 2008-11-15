@@ -128,7 +128,12 @@ sub _slave {
 
         setpgrp;
 
-        { exec @args; }
+        # For the benefit of tests
+        if (@args == 1 && ref $args[0] eq 'CODE') {
+            $args[0]->();
+        } else {
+            exec @args;
+        }
         syswrite $statpipe, pack('l', $!);
     }
 
