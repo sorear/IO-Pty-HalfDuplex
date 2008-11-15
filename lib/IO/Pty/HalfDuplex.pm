@@ -10,7 +10,7 @@ our @ISA = ('IO::Pty::Easy');
 our $VERSION = '0.01';
 
 sub new {
-    my $self = IO::Pty::HalfDuplex->SUPER::new();
+    my $self = IO::Pty::Easy::new(@_);
 
     $self->{from} = $self->{to} = $self->{just_started} = undef;
     return $self;
@@ -42,6 +42,14 @@ sub spawn {
     sub sigchld { wait; $SIG{CHLD} = \&sigchld; }
     $SIG{CHLD} = \&sigchld;
     my $cpid = fork;
+
+    my $debfd;
+
+    if ($self->{debug}) {
+        open $debfd, ">&STDERR";
+        $debfd->autoflush(1);
+    }
+
     unless ($cpid) {
         close $readp;
         close $fromr;
@@ -61,12 +69,13 @@ sub spawn {
             or carp "Couldn't reopen STDERR for writing";
         close $slave;
 
-        _slave($writep, $tor, $fromw, @_);
+        _slave($writep, $tor, $fromw, $debfd, @_);
     }
 
     close $writep;
     close $tor;
     close $fromw;
+    close $debfd if defined $debfd;
     $self->{pty}->close_slave;
     $self->{pty}->set_raw;
     # this sysread will block until either we get an EOF from the other end of
@@ -104,7 +113,7 @@ sub spawn {
 }
 
 sub _slave {
-    my ($statpipe, $inpipe, $outpipe, @args) = @_;
+    my ($statpipe, $inpipe, $outpipe, $stderr, @args) = @_;
 
     $SIG{'CHLD'} = sub { };
     $SIG{'TTOU'} = $SIG{'TTIN'} = $SIG{'TSTP'} = 'IGNORE';
@@ -131,8 +140,9 @@ sub _slave {
         # For the benefit of tests
         if (@args == 1 && ref $args[0] eq 'CODE') {
             close $statpipe;
-            $args[0]->();
+            $args[0]->($stderr);
         } else {
+            close $stderr;
             exec @args;
         }
         syswrite $statpipe, pack('l', $!);
@@ -143,6 +153,7 @@ sub _slave {
     while (1) {
         # Wait until the slave blocks (or dies) {{{
 
+        print $stderr "waiting for slave\n" if defined $stderr;
         my $stat;
         do {
             waitpid($cpid, WUNTRACED) || die "wait failed: $!\n";
@@ -156,6 +167,7 @@ sub _slave {
             syswrite $outpipe, "\0";
             exit WEXITSTATUS($stat);
         }
+        print $stderr "slave stopped\n" if defined $stderr;
 
         # }}}
         # Slave is blocked.  Is there any unread input? {{{
@@ -172,8 +184,10 @@ sub _slave {
 
         if (!$more && WSTOPSIG($stat) == SIGTTIN) {
             my $null;
+            print $stderr "waiting for inpipe\n" if defined $stderr;
             syswrite $outpipe, "\0";
             sysread $inpipe, $null, 1;
+            print $stderr "done waiting for inpipe\n" if defined $stderr;
         }
 
         # }}}
@@ -181,13 +195,17 @@ sub _slave {
 
         POSIX::tcsetpgrp 0, $cpid;
         kill SIGCONT, $cpid;
+        print $stderr "stepping slave\n" if defined $stderr;
 
         # Yuk.  We need the slave to actually be scheduled and read data...
         select undef, undef, undef, 0.005;
 
+        print $stderr "reclaiming tty\n" if defined $stderr;
         kill SIGSTOP, $cpid;
         POSIX::tcsetpgrp 0, $$;
         kill SIGCONT, $cpid;
+        print $stderr "done reclaiming tty\n" if defined $stderr;
+
 
         # }}}
     }
@@ -201,7 +219,8 @@ sub read {
     if ($self->{just_started}) {
         $self->{just_started} = 0;
     } else {
-        syswrite $self->{to}, "\0";
+        warn "writing to inpipe\n" if $self->{debug};
+        syswrite $self->{to}, "\0" or die "inpipe write failed: $!";
     }
 
     my $buf = '';
@@ -242,6 +261,8 @@ sub write {
         carp "Writing to dead slave";
         return;
     }
+
+    warn "writing $text\n" if $self->{debug};
 
     syswrite $self->{pty}, $text;
 }

@@ -56,22 +56,23 @@ sub ready {
 }
 
 sub mock {
-    open LOG, ">>/tmp/k";
-    LOG->autoflush(1);
+    my $stderr = shift;
     while (1) {
         my $line = <$comm_read>;
-        print LOG "got $line";
+        print $stderr "got $line";
         my ($sn, $code) = ($line =~ /([0-9]*) (.*)\n/);
         my $out = eval $code || $@;
         chomp $out;
-        print LOG "replying $sn $out\n";
+        print $stderr "replying $sn $out\n";
         print $val_write "$sn $out\n";
     }
 }
 
 # Now we can start
 
-my $pty = new_ok('IO::Pty::HalfDuplex');
+my $pty = new_ok('IO::Pty::HalfDuplex' => [debug => 1]);
+
+ok($pty->{debug}, "pty successfully created in debug mode");
 
 ok(!$pty->is_active, "pty starts inactive");
 
@@ -96,17 +97,16 @@ queryA(4, 'print 2; $_ = <STDIN>; chomp; $_'); #I
 is($pty->read(), "2",                  "First read got output");
 is($pty->read(), "",                   "Back-to-back reads get nothing");
 
-$pty->write('3\n');
+$pty->write("3\n");
 
 ok(!ready(),                           "No data readable until read");
 
 queryA(5, '<STDIN>; print 4; sleep 1; print 5; <STDIN>; my $a = "\1"; ' .
           'my $r = select $a, undef, undef, 0.1; <STDIN>; $r');
 
-is($pty->read(), "",                   "Successful read of nothing"); #C
+is($pty->read(), "",                   "Successful read of nothing");
 
 ok(ready(),                            "Read allowed process to continue");
-
 queryB(4, '3',                         "Written data received by slave");
 
 # Still going?  Up the ante.
@@ -141,7 +141,7 @@ $pty->write("9\n");
 
 ok($pty->is_active,                    "exit not noticed before read");
 is($pty->read, "",                     "exiting slave noticed");
-ok(!$pty->is_acive,                    "now noticed, after read");
+ok(!$pty->is_active,                   "now noticed, after read");
 is($pty->read, undef,                  "reading exited -> undef");
 
 # Wow.
