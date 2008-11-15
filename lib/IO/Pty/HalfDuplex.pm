@@ -5,10 +5,100 @@ use warnings;
 use POSIX qw(:unistd_h :sys_wait_h :signal_h);
 use IO::Pty::Easy;
 
+our @ISA = ('IO::Pty::Easy');
 our $VERSION = '0.01';
 
+sub new {
+    my $self = IO::Pty::HalfDuplex->SUPER::new();
+
+    $self->{from} = $self->{to} = $self->{just_started} = undef;
+    return $self;
+}
+
+# Differences from the superclass spawn:
+#
+# - An extra pair of pipes are passed in.
+# - Failure to sync (EBADF, EFAULT; always code error) doesn't
+#   kill the child (How would we know which one?)
+# - Obtains PID from child
+
+sub spawn {
+    my $self = shift;
+    my $slave = $self->{pty}->slave;
+
+    croak "Attempt to spawn a subprocess when one is already running"
+        if $self->is_active;
+
+    # set up a pipe to use for keeping track of the child process during exec
+    pipe my ($readp, $writep) || croak "Failed to create a pipe";
+    pipe my ($fromr, $fromw) || croak "Failed to create a pipe";
+    pipe my ($tor, $tow) || croak "Failed to create a pipe";
+
+    # fork a child process
+    # if the exec fails, signal the parent by sending the errno across the pipe
+    # if the exec succeeds, perl will close the pipe, and the sysread will
+    # return due to EOF
+    sub sigchld { wait; $SIG{CHLD} = \&sigchld; }
+    $SIG{CHLD} = \&sigchld;
+    my $cpid = fork;
+    unless ($cpid) {
+        close $readp, $fromr, $tow;
+        $self->{pty}->make_slave_controlling_terminal;
+        close $self->{pty};
+        $slave->clone_winsize_from(\*STDIN) if $self->{handle_pty_size};
+        $slave->set_raw;
+        # reopen the standard file descriptors in the child to point to the
+        # pty rather than wherever they have been pointing during the script's
+        # execution
+        open(STDIN,  "<&" . $slave->fileno)
+            or carp "Couldn't reopen STDIN for reading";
+        open(STDOUT, ">&" . $slave->fileno)
+            or carp "Couldn't reopen STDOUT for writing";
+        open(STDERR, ">&" . $slave->fileno)
+            or carp "Couldn't reopen STDERR for writing";
+        close $slave;
+
+        _slave $writep, $tor, $fromw, @_;
+    }
+
+    close $writep, $tor, $fromw;
+    $self->{pty}->close_slave;
+    $self->{pty}->set_raw;
+    # this sysread will block until either we get an EOF from the other end of
+    # the pipe being closed due to the exec, or until the child process sends
+    # us the errno of the exec call after it fails
+    my $errno, $rcpid;
+    my $syncd = defined (sysread($readp, $rcpid, 4)) &&
+                defined (sysread($readp, $errno, 4));
+
+    $self->{pid} = unpack "l", $rcpid;
+    $errno = unpack "l", ($errno || "\0\0\0\0");
+
+    unless ($syncd) {
+        croak "Cannot sync with child: $!";
+    }
+    close $readp;
+    if ($errno) {
+        $self->_wait_for_inactive;
+        $! = $errno + 0;
+        croak "Cannot exec(@_): $!";
+    }
+
+    my $winch;
+    $winch = sub {
+        $self->{pty}->slave->clone_winsize_from(\*STDIN);
+        kill WINCH => $self->{pid} if $self->is_active;
+        $SIG{WINCH} = $winch;
+    };
+    $SIG{WINCH} = $winch if $self->{handle_pty_size};
+
+    $self->{to} = $tow;
+    $self->{from} = $fromr;
+    $self->{just_started} = 1;
+}
+
 sub _slave {
-    my ($inpipe, $outpipe, @args) = @_;
+    my ($statpipe, $inpipe, $outpipe, @args) = @_;
 
     $SIG{'CHLD'} = sub { };
     $SIG{'TTOU'} = $SIG{'TTIN'} = $SIG{'TSTP'} = 'IGNORE';
@@ -24,6 +114,8 @@ sub _slave {
         die "Cannot fork: $!\n";
     }
 
+    syswrite $statpipe, pack('l', $cpid);
+
     if (!$cpid) {
         # Child
 
@@ -32,8 +124,10 @@ sub _slave {
         setpgrp;
 
         exec @args;
-        die "Cannot exec(@ARGV): $!";
+        syswrite $statpipe, pack('l', $!);
     }
+
+    close $statpipe;
 
     while (1) {
         # Wait until the slave blocks (or dies) {{{
@@ -86,6 +180,71 @@ sub _slave {
 
         # }}}
     }
+}
+
+sub read {
+    my $self = shift;
+
+    return undef unless $self->is_active;
+
+    if ($self->{just_started}) {
+        $self->{just_started} = 0;
+    } else {
+        syswrite $self->{to}, "\0";
+    }
+
+    my $buf = '';
+
+    while (1) { 
+        my $vin = '';
+        vec($vin, fileno($self->{from}), 1) = 1;
+        vec($vin, fileno($self->{pty}), 1) = 1;
+
+        select($vin, undef, undef, undef) >= 0 or
+            croak "select failed: $!";
+
+        if (vec($vin, fileno($self->{pty}), 1)) {
+            sysread $self->{pty}, $buf, 8192, length $buf;
+        } else {
+            # select returned, but no output.  Must be the end-of-output flag
+            my $null;
+            my $more = sysread $self->{from}, $null, 1;
+
+            croak "sysread on pipe failed: $!" if $more < 0;
+
+            if ($more == 0) {
+                # EOF - the slave must be dead.  Mark that now.
+                $self->{from} = $self->{to} = $self->{pid} = undef;
+            }
+
+            last;
+        }
+    }
+
+    return $buf;
+}
+
+sub write {
+    my ($self, $text) = @_;
+
+    if (! $self->is_active) {
+        carp "Writing to dead slave";
+        return;
+    }
+
+    syswrite $self->{pty}, $text;
+}
+
+sub is_active {
+    my $self = shift;
+
+    return defined $self->{pid};
+}
+
+sub _wait_for_inactive {
+    my $self = shift;
+
+    $self->read while $self->is_active;
 }
 
 =head1 NAME
