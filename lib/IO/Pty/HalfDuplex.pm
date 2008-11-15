@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use POSIX qw(:unistd_h :sys_wait_h :signal_h);
 use IO::Pty::Easy;
+use Carp;
 
 our @ISA = ('IO::Pty::Easy');
 our $VERSION = '0.01';
@@ -30,9 +31,9 @@ sub spawn {
         if $self->is_active;
 
     # set up a pipe to use for keeping track of the child process during exec
-    pipe my ($readp, $writep) || croak "Failed to create a pipe";
-    pipe my ($fromr, $fromw) || croak "Failed to create a pipe";
-    pipe my ($tor, $tow) || croak "Failed to create a pipe";
+    pipe (my $readp, my $writep) || croak "Failed to create a pipe";
+    pipe (my $fromr, my $fromw) || croak "Failed to create a pipe";
+    pipe (my $tor, my $tow) || croak "Failed to create a pipe";
 
     # fork a child process
     # if the exec fails, signal the parent by sending the errno across the pipe
@@ -42,7 +43,9 @@ sub spawn {
     $SIG{CHLD} = \&sigchld;
     my $cpid = fork;
     unless ($cpid) {
-        close $readp, $fromr, $tow;
+        close $readp;
+        close $fromr;
+        close $tow;
         $self->{pty}->make_slave_controlling_terminal;
         close $self->{pty};
         $slave->clone_winsize_from(\*STDIN) if $self->{handle_pty_size};
@@ -58,16 +61,18 @@ sub spawn {
             or carp "Couldn't reopen STDERR for writing";
         close $slave;
 
-        _slave $writep, $tor, $fromw, @_;
+        _slave($writep, $tor, $fromw, @_);
     }
 
-    close $writep, $tor, $fromw;
+    close $writep;
+    close $tor;
+    close $fromw;
     $self->{pty}->close_slave;
     $self->{pty}->set_raw;
     # this sysread will block until either we get an EOF from the other end of
     # the pipe being closed due to the exec, or until the child process sends
     # us the errno of the exec call after it fails
-    my $errno, $rcpid;
+    my ($errno, $rcpid);
     my $syncd = defined (sysread($readp, $rcpid, 4)) &&
                 defined (sysread($readp, $errno, 4));
 
@@ -123,7 +128,7 @@ sub _slave {
 
         setpgrp;
 
-        exec @args;
+        { exec @args; }
         syswrite $statpipe, pack('l', $!);
     }
 
@@ -142,7 +147,7 @@ sub _slave {
         if (!WIFSTOPPED($stat)) {
             # Oh, it's dead.
 
-            syswrite $outfh, "\0";
+            syswrite $outpipe, "\0";
             exit WEXITSTATUS($stat);
         }
 
@@ -161,8 +166,8 @@ sub _slave {
 
         if (!$more && WSTOPSIG($stat) == SIGTTIN) {
             my $null;
-            syswrite $outfh, "\0";
-            sysread $infh, $null, 1;
+            syswrite $outpipe, "\0";
+            sysread $inpipe, $null, 1;
         }
 
         # }}}
