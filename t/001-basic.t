@@ -2,7 +2,7 @@
 # vim: sw=4 et
 use strict;
 use warnings;
-use Test::More 'no_plan';
+use Test::More tests => 32;
 
 use IO::Handle;
 
@@ -42,7 +42,7 @@ my $pty = new_ok('IO::Pty::HalfDuplex');
 
 ok(!$pty->is_active, "pty starts inactive");
 
-$pty->spawn sub { print (eval(<$comm_read>) || $@), "\n" while 1; }
+$pty->spawn (sub { print ((eval(<$comm_read>) || $@), "\n") while 1; });
 
 is(query('2 + 2'), 4,                  "mock slave is functional for success");
 is(query('die "moo"'), "moo",          "mock slave is functional for failure");
@@ -120,7 +120,7 @@ is($pty->read, undef,                  "reading exited -> undef");
 
 # Wow.
 
-$pty->spawn sub { print (eval(<$comm_read>) || $@), "\n" while 1; }
+$pty->spawn (sub { print ((eval(<$comm_read>) || $@), "\n") while 1; });
 
 queryA('<STDIN> + <STDIN>; <STDIN>; <STDIN>');
 
@@ -135,7 +135,7 @@ ok(!$pty->is_active,                   "kill worked");
 
 # A final test.
 
-$pty->spawn sub { print (eval(<$comm_read>) || $@), "\n" while 1; }
+$pty->spawn (sub { print ((eval(<$comm_read>) || $@), "\n") while 1; });
 
 queryA('<STDIN>; POSIX::tcflush(0, POSIX::TCOFLUSH); <STDIN>; ' .
        'print "10"; exit');
