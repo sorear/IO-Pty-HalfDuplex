@@ -83,6 +83,11 @@ sub spawn {
         croak "Cannot sync with child: $!";
     }
     close $readp;
+
+    $self->{to} = $tow;
+    $self->{from} = $fromr;
+    $self->{just_started} = 1;
+
     if ($errno) {
         $self->_wait_for_inactive;
         $! = $errno + 0;
@@ -96,10 +101,6 @@ sub spawn {
         $SIG{WINCH} = $winch;
     };
     $SIG{WINCH} = $winch if $self->{handle_pty_size};
-
-    $self->{to} = $tow;
-    $self->{from} = $fromr;
-    $self->{just_started} = 1;
 }
 
 sub _slave {
@@ -130,6 +131,7 @@ sub _slave {
 
         # For the benefit of tests
         if (@args == 1 && ref $args[0] eq 'CODE') {
+            close $statpipe;
             $args[0]->();
         } else {
             exec @args;
