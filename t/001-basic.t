@@ -54,22 +54,24 @@ sub ready {
 
 sub mock {
     my $stderr = shift;
-    open STDERR, "<&", $stderr if defined $stderr;
+    open STDERR, ">&", $stderr  if  defined $stderr;
+    open STDERR, ">/dev/null"   if !defined $stderr;
+
     while (1) {
         my $line = <$comm_read>;
-        print $stderr "got $line" if defined $stderr;
+        warn "got $line\n";
         my ($sn, $code) = ($line =~ /([0-9]*) (.*)\n/);
         my $out = eval $code;
         $out = $@ if $@;
         chomp $out;
-        print $stderr "replying $sn $out\n" if defined $stderr;
+        warn "replying $sn $out\n";
         print $val_write "$sn $out\n";
     }
 }
 
 # Now we can start
 
-my $pty = IO::Pty::HalfDuplex->new(debug => 0);
+my $pty = IO::Pty::HalfDuplex->new(debug => (@ARGV == 1 && $ARGV[0] == "-v"));
 
 isa_ok($pty, 'IO::Pty::HalfDuplex');
 
@@ -98,7 +100,8 @@ queryB(2, '0',                         "slave is a process group leader");
 queryA(3, 'POSIX::tcgetpgrp(0) - getpgrp(getppid)');
 queryB(3, '0',                         "and is running in the background");
 
-queryA(4, 'print 2; $_ = <STDIN>; chomp; $_'); #I
+queryA(4, 'print 2; warn "4/before read"; $_ = <STDIN>; if (!defined $_) { ' .
+          'warn $!; }; warn "4/after read"; chomp; $_'); #I
 
 is($pty->read(), "2",                  "First read got output");
 is($pty->read(), "",                   "Back-to-back reads get nothing");
