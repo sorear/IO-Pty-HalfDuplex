@@ -176,7 +176,9 @@ sub _slave {
         my $stat;
         do {
             waitpid($cpid, WUNTRACED) || die "wait failed: $!\n";
-            $stat = ${^CHILD_ERROR_NATIVE};
+            # Older Perls (<= 5.8.8) put all status codes into $?.  Newer ones
+            # will only put exits there, and signals go elsewhere.  Argh.
+            $stat = ${^CHILD_ERROR_NATIVE} || $?;
         } while (WIFSTOPPED($stat) && WSTOPSIG($stat) != SIGTTIN
             && WSTOPSIG($stat) != SIGTTOU);
 
