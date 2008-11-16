@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use POSIX qw(:unistd_h :sys_wait_h :signal_h);
 use Carp;
+use IO::Pty;
 
 our $VERSION = '0.01';
 
