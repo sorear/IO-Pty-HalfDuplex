@@ -185,7 +185,7 @@ sub _slave {
         if (!WIFSTOPPED($stat)) {
             # Oh, it's dead.
 
-            print $stderr "my charge $cpid is dead\n" if defined $stderr;
+            print $stderr "my charge $cpid is dead $stat\n" if defined $stderr;
             POSIX::_exit(WEXITSTATUS($stat));
         }
         print $stderr "slave stopped\n" if defined $stderr;

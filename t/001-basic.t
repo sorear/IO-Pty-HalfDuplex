@@ -54,6 +54,7 @@ sub ready {
 
 sub mock {
     my $stderr = shift;
+    open STDERR, "<&", $stderr if defined $stderr;
     while (1) {
         my $line = <$comm_read>;
         print $stderr "got $line" if defined $stderr;
