@@ -136,6 +136,8 @@ sub _slave {
 
     setpgrp $$, $$;
 
+    my $step = 0.005;
+
     POSIX::tcsetpgrp(0, $$)
         or die "cannot tcsetpgrp: $!\n";
 
@@ -209,6 +211,9 @@ sub _slave {
             syswrite $outpipe, "\0";
             sysread $inpipe, $null, 1;
             print $stderr "done waiting for inpipe\n" if defined $stderr;
+            $step = 0.005
+        } else {
+            $step += ($step > 1 ? 0.5 : $step * 0.5);
         }
 
         # }}}
@@ -219,7 +224,7 @@ sub _slave {
         print $stderr "stepping slave\n" if defined $stderr;
 
         # Yuk.  We need the slave to actually be scheduled and read data...
-        select undef, undef, undef, 0.005;
+        select undef, undef, undef, $step;
 
         print $stderr "reclaiming tty\n" if defined $stderr;
         kill SIGSTOP, $cpid;
