@@ -71,7 +71,7 @@ sub mock {
 
 # Now we can start
 
-my $pty = IO::Pty::HalfDuplex->new(debug => (@ARGV == 1 && $ARGV[0] == "-v"));
+my $pty = IO::Pty::HalfDuplex->new(debug => ($ENV{TEST_VERBOSE} ? 1 : 0));
 
 isa_ok($pty, 'IO::Pty::HalfDuplex');
 

@@ -162,7 +162,7 @@ sub _slave {
             close $outpipe;
             $args[0]->($stderr);
         } else {
-            close $stderr;
+            close $stderr if defined $stderr;
             exec @args;
         }
         syswrite $statpipe, pack('l', $!);
