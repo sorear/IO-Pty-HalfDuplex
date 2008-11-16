@@ -68,7 +68,9 @@ sub mock {
 
 # Now we can start
 
-my $pty = new_ok('IO::Pty::HalfDuplex' => [debug => 0]);
+my $pty = IO::Pty::HalfDuplex->new(debug => 0);
+
+isa_ok($pty, 'IO::Pty::HalfDuplex');
 
 #ok($pty->{debug}, "pty successfully created in debug mode");
 

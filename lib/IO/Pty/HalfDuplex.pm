@@ -6,13 +6,31 @@ use POSIX qw(:unistd_h :sys_wait_h :signal_h);
 use IO::Pty::Easy;
 use Carp;
 
-our @ISA = ('IO::Pty::Easy');
 our $VERSION = '0.01';
 
 sub new {
-    my $self = IO::Pty::Easy::new(@_);
+    my $class = shift;
+    my $self = {
+        # options
+        handle_pty_size => 1,
+        def_max_read_chars => 8192,
+        debug => 0,
+        @_,
 
-    $self->{from} = $self->{to} = $self->{just_started} = undef;
+        # state
+        pty => undef,
+        pid => undef,
+        superpid => undef,
+        just_started => 0,
+        from => undef,
+        to => undef,
+    };
+
+    bless $self, $class;
+
+    $self->{pty} = new IO::Pty;
+    $self->{handle_pty_size} = 0 unless POSIX::isatty(*STDIN);
+
     return $self;
 }
 
@@ -288,6 +306,50 @@ sub _wait_for_inactive {
     $self->read while $self->is_active;
 }
 
+# kill() {{{
+
+=head2 kill()
+
+Sends a signal to the process currently running on the pty (if any). Optionally blocks until the process dies.
+
+C<kill()> takes two optional arguments. The first is the signal to send, in any format that the perl C<kill()> command recognizes (defaulting to "TERM"). The second is a boolean argument, where false means to block until the process dies, and true means to just send the signal and return.
+
+Returns 1 if a process was actually signaled, and 0 otherwise.
+
+=cut
+
+sub kill {
+    my $self = shift;
+    my ($sig, $non_blocking) = @_;
+    $sig = "TERM" unless defined $sig;
+
+    my $kills = kill $sig => $self->{pid} if $self->is_active;
+    $self->_wait_for_inactive unless $non_blocking;
+
+    return $kills;
+}
+# }}}
+
+# close() {{{
+
+=head2 close()
+
+Kills any subprocesses and closes the pty. No other operations are valid after this call.
+
+=over 4
+
+=back
+
+=cut
+
+sub close {
+    my $self = shift;
+
+    $self->kill;
+    close $self->{pty};
+    $self->{pty} = undef;
+}
+# }}}
 =head1 NAME
 
 ristub - the remote interactive stub
