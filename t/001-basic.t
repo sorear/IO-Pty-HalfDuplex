@@ -2,9 +2,10 @@
 # vim: sw=4 et
 use strict;
 use warnings;
-use Test::More tests => 32;
+use Test::More tests => 24;
 
 use IO::Handle;
+use Time::HiRes 'gettimeofday';
 
 use_ok 'IO::Pty::HalfDuplex';
 
@@ -41,11 +42,7 @@ sub queryB {
         is($1, $sn, $name);
         diag("(serial number)");
     } else {
-        if (ref $expect eq 'Regexp') {
-            like($2, $expect, $name);
-        } else {
-            is($2, $expect, $name);
-        }
+        is($2, $expect, $name);
     }
 }
 
@@ -59,20 +56,21 @@ sub mock {
     my $stderr = shift;
     while (1) {
         my $line = <$comm_read>;
-        print $stderr "got $line";
+        print $stderr "got $line" if defined $stderr;
         my ($sn, $code) = ($line =~ /([0-9]*) (.*)\n/);
-        my $out = eval $code || $@;
+        my $out = eval $code;
+        $out = $@ if $@;
         chomp $out;
-        print $stderr "replying $sn $out\n";
+        print $stderr "replying $sn $out\n" if defined $stderr;
         print $val_write "$sn $out\n";
     }
 }
 
 # Now we can start
 
-my $pty = new_ok('IO::Pty::HalfDuplex' => [debug => 1]);
+my $pty = new_ok('IO::Pty::HalfDuplex' => [debug => 0]);
 
-ok($pty->{debug}, "pty successfully created in debug mode");
+#ok($pty->{debug}, "pty successfully created in debug mode");
 
 ok(!$pty->is_active, "pty starts inactive");
 
@@ -81,16 +79,21 @@ $pty->spawn (\&mock);
 # I means that the slave is now waiting on stdin.
 # C means ... the command pipe.
 
+queryA(99, 'getppid . " " . $$');
+my ($sup, $slv) = (<$val_read> =~ /[0-9]+ ([0-9]+) ([0-9]+)\n/);
+
+warn "$sup $slv" if $pty->{debug};
+
 queryA(0, '2 + 2');
 queryB(0, 4,                           "mock slave is functional for success");
 queryA(1, 'die "moo\n"');
 queryB(1, "moo",                       "mock slave is functional for failure");
 
-queryA(2, '$$ . " " . getpgrp');
-queryB(2, qr/^(.*) \1$/,               "slave is a process group leader");
+queryA(2, '$$ - getpgrp');
+queryB(2, '0',                         "slave is a process group leader");
 
-queryA(3, 'POSIX::tcgetpgrp(0) . " " . getpgrp(getppid)');
-queryB(3, qr/^(.*) \1$/,               "and is running in the background");
+queryA(3, 'POSIX::tcgetpgrp(0) - getpgrp(getppid)');
+queryB(3, '0',                         "and is running in the background");
 
 queryA(4, 'print 2; $_ = <STDIN>; chomp; $_'); #I
 
@@ -101,8 +104,8 @@ $pty->write("3\n");
 
 ok(!ready(),                           "No data readable until read");
 
-queryA(5, '<STDIN>; print 4; sleep 1; print 5; <STDIN>; my $a = "\1"; ' .
-          'my $r = select $a, undef, undef, 0.1; <STDIN>; $r');
+queryA(5, '<STDIN>; print 4; sleep 1; print 5; <STDIN>; $a = gettimeofday; ' .
+          '<STDIN>; (gettimeofday - $a) < 0.1');
 
 is($pty->read(), "",                   "Successful read of nothing");
 
@@ -122,25 +125,19 @@ $pty->write("\n");
 queryA(6, 'print 6; my $a = "\1"; select $a, undef, undef, 0; print 7; ' . 
           '<STDIN>');
 
-is($pty->read, "6", "Select with empty input misinterpreted as read");
+is($pty->read, "67", "Non-blocking reads via select are ignored");
 
 queryB(5, "1",                         "Laggy transmittion appears instant");
 
-# I'm impressed.  Up the ante again.
+# I'm impressed.
 
 $pty->write("\n");
-queryA(7, 'print 8; <STDIN>');
+queryA(7, 'exit; <STDIN>');
 
-is($pty->read, "78",                   "but another read uncorks");
-
-queryB(6, "",                          "sync received");
-
-queryA(8, 'exit');
-
-$pty->write("9\n");
+$pty->write("8\n");
 
 ok($pty->is_active,                    "exit not noticed before read");
-is($pty->read, "",                     "exiting slave noticed");
+is($pty->read, "",                     "read last bit of data");
 ok(!$pty->is_active,                   "now noticed, after read");
 is($pty->read, undef,                  "reading exited -> undef");
 
@@ -148,7 +145,8 @@ is($pty->read, undef,                  "reading exited -> undef");
 
 $pty->spawn(\&mock);
 
-queryA(10, '<STDIN> + <STDIN>; <STDIN>; <STDIN>');
+queryA(10, 'print(<STDIN> + <STDIN>)');
+queryA(11, '<STDIN>');
 
 $pty->write("2\n2\n");
 
@@ -163,7 +161,7 @@ ok(!$pty->is_active,                   "kill worked");
 
 $pty->spawn (\&mock);
 
-queryA(11, '<STDIN>; POSIX::tcflush(0, POSIX::TCOFLUSH); <STDIN>; ' .
+queryA(20, '<STDIN>; POSIX::tcflush(0, POSIX::TCOFLUSH); <STDIN>; ' .
            'print "10"; exit');
 
 $pty->write("\n\n");

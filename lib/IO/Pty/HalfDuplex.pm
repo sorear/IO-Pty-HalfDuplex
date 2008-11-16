@@ -39,18 +39,16 @@ sub spawn {
     # if the exec fails, signal the parent by sending the errno across the pipe
     # if the exec succeeds, perl will close the pipe, and the sysread will
     # return due to EOF
-    sub sigchld { wait; $SIG{CHLD} = \&sigchld; }
-    $SIG{CHLD} = \&sigchld;
     my $cpid = fork;
 
-    my $debfd;
-
-    if ($self->{debug}) {
-        open $debfd, ">&STDERR";
-        $debfd->autoflush(1);
-    }
-
     unless ($cpid) {
+        my $debfd;
+
+        if ($self->{debug}) {
+            open $debfd, ">&STDERR";
+            $debfd->autoflush(1);
+        }
+
         close $readp;
         close $fromr;
         close $tow;
@@ -71,11 +69,11 @@ sub spawn {
 
         _slave($writep, $tor, $fromw, $debfd, @_);
     }
+    $self->{superpid} = $cpid;
 
     close $writep;
     close $tor;
     close $fromw;
-    close $debfd if defined $debfd;
     $self->{pty}->close_slave;
     $self->{pty}->set_raw;
     # this sysread will block until either we get an EOF from the other end of
@@ -140,12 +138,15 @@ sub _slave {
         # For the benefit of tests
         if (@args == 1 && ref $args[0] eq 'CODE') {
             close $statpipe;
+            close $inpipe;
+            close $outpipe;
             $args[0]->($stderr);
         } else {
             close $stderr;
             exec @args;
         }
         syswrite $statpipe, pack('l', $!);
+        POSIX::_exit 1;
     }
 
     close $statpipe;
@@ -164,8 +165,8 @@ sub _slave {
         if (!WIFSTOPPED($stat)) {
             # Oh, it's dead.
 
-            syswrite $outpipe, "\0";
-            exit WEXITSTATUS($stat);
+            print $stderr "my charge $cpid is dead\n" if defined $stderr;
+            POSIX::_exit(WEXITSTATUS($stat));
         }
         print $stderr "slave stopped\n" if defined $stderr;
 
@@ -225,7 +226,8 @@ sub read {
 
     my $buf = '';
 
-    while (1) { 
+    while (1) {
+        warn "in read loop\n" if $self->{debug};
         my $vin = '';
         vec($vin, fileno($self->{from}), 1) = 1;
         vec($vin, fileno($self->{pty}), 1) = 1;
@@ -233,17 +235,24 @@ sub read {
         select($vin, undef, undef, undef) >= 0 or
             croak "select failed: $!";
 
+        my $newbytes = 0;
+
         if (vec($vin, fileno($self->{pty}), 1)) {
-            sysread $self->{pty}, $buf, 8192, length $buf;
-        } else {
-            # select returned, but no output.  Must be the end-of-output flag
+            $newbytes = sysread $self->{pty}, $buf, 8192, length $buf;
+        }
+
+        if (!$newbytes) {
+            # eof or turn flag
             my $null;
             my $more = sysread $self->{from}, $null, 1;
 
             croak "sysread on pipe failed: $!" if $more < 0;
 
-            if ($more == 0) {
+            if ($null eq "") {
                 # EOF - the slave must be dead.  Mark that now.
+                waitpid $self->{superpid}, 0;
+                close $self->{from};
+                close $self->{to};
                 $self->{from} = $self->{to} = $self->{pid} = undef;
             }
 
