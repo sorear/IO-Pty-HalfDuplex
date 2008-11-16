@@ -163,7 +163,7 @@ ok(!$pty->is_active,                   "kill worked");
 
 $pty->spawn (\&mock);
 
-queryA(20, '<STDIN>; POSIX::tcflush(0, POSIX::TCOFLUSH); <STDIN>; ' .
+queryA(20, '<STDIN>; POSIX::tcflush(0, POSIX::TCOFLUSH()); <STDIN>; ' .
            'print "10"; exit');
 
 $pty->write("\n\n");
