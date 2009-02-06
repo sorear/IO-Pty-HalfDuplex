@@ -169,35 +169,39 @@ sub spawn {
     $self->{slave_pgid} = unpack "N", $rcpid;
 
     $self->{read_buffer} = $self->{write_buffer} = '';
-    $self->{active} = $self->{waiting} = 1;
+    $self->{sent_sync} = 0; $self->{active} = 1;
     $self->{timeout} = $self->{exit_code} = $self->{exit_sig} = undef;
-
-    syswrite $p2w, "w" . pack "d", $_infinity;
 }
 # }}}
 # I/O on shell pipes {{{
 # Process a wait result from the shell
 sub _handle_info_read {
     my $self = shift;
-
     my $ibuf;
-
-    $self->{waiting} = 0;
 
     my $ret = sysread $self->{info_pipe}, $ibuf, 1;
 
     if ($ret == 0) {
-        # Suprise EOF means the shell must have crashed
+        # Shell has exited
+        $self->{sent_sync} = 0;
         $self->{active} = 0;
-        $self->{exit_code} = undef;
+        # FreeBSD 7 (and presumably other BSDkin) requires the pty output
+        # buffer to be drained before any session leader can exit.
+        $self->_process_send(1);
+        # Reap the shell
+        waitpid($self->{shell_pid}, 0);
+
+        if (!defined $self->{exit_code}) {
+            # Get the shell crash code
+            $self->{exit_sig}  = WIFSIGNALED($?) ? WTERMSIG($?) : 0;
+            $self->{exit_code} = WIFEXITED($?) ? WEXITSTATUS($?) : 0;
+        }
     } elsif ($ibuf eq 'd') {
         sysread $self->{info_pipe}, $ibuf, 2;
 
-        $self->{active} = 0;
         @{$self}{"exit_sig","exit_code"} = unpack "CC", $ibuf;
     } elsif ($ibuf eq 'r') {
-    } elsif ($ibuf eq 't') {
-        die "timeout\n";
+        $self->{sent_sync} = 0;
     }
 }
 
@@ -213,24 +217,27 @@ sub _handle_pty_write {
 sub _handle_pty_read {
     my ($self) = @_;
 
-    sysread $self->{pty}, $self->{read_buffer}, $self->{buffer_size},
-        length $self->{read_buffer} or die "read(pty): $!";
+    defined (sysread $self->{pty}, $self->{read_buffer}, $self->{buffer_size},
+        length $self->{read_buffer}) or die "read(pty): $!";
 }
 # }}}
 # Read internals {{{
 # A little something to make all these select loops nicer, NOT A METHOD
 sub _select_loop {
-    my $block = shift;
-    my $pred = shift;
+    my ($self, $block, $pred) = splice @_, 0, 3;
 
     while ($pred->()) {
         my %mask = ('r' => '', 'w' => '', 'x' => '');
 
+        my $tmo = !$block ? 0 :
+            defined $self->{timeout} ? $self->{timeout} - time : undef;
+
         for (@_) {
-            vec($mask{$_->[1]}, fileno($_->[0]), 1) = 1;
+            vec($mask{$_->[1]}, fileno($_->[0]), 1) = 1
+                if @$_ < 4 || $_->[3];
         }
 
-        last unless select($mask{r}, $mask{w}, $mask{x}, $block ? undef : 0);
+        return 1 if ($tmo||0)< 0 || !select($mask{r}, $mask{w}, $mask{x}, $tmo);
 
         for (@_) {
             $_->[2]() if vec($mask{$_->[1]}, fileno($_->[0]), 1);
@@ -238,43 +245,31 @@ sub _select_loop {
     }
 }
 
-# While the slave is active, send and receive data until either the write
-# buffer is empty or the kernel write buffer is full.  In either case, the
-# slave is reading, dead, or busy; wait to find out which.
-# 
-# While the shell is waiting, read data to avoid a deadlock threat; the shell
-# will not return until the kernel write buffer is empty or the slave is dead,
-# in the latter case or if our write buffer is empty we can return, otherwise
-# we start again.
-
+# We want to return when the slave has processed all input.  We have to
+# break it up into pty-buffer-sized chunks, though.
 sub _process_wait {
     my ($self) = shift;
 
-    croak "_process_wait should only be called when the slave is waiting!"
-        unless $self->{active} && $self->{waiting};
-
-    _select_loop 1 => sub{ $self->{waiting} },
+    $self->_select_loop(1 => sub{ $self->{sent_sync} },
         [ $self->{info_pipe}, r => sub { $self->_handle_info_read() } ],
-        [ $self->{pty}, r       => sub { $self->_handle_pty_read() } ];
+        [ $self->{pty}, r       => sub { $self->_handle_pty_read() } ]);
 }
 
 # Send as much data as possible
 sub _process_send {
-    my ($self) = shift;
+    my ($self, $noi) = @_;
 
-    _select_loop 0 => sub{ $self->{write_buffer} ne '' },
+    $self->_select_loop(0 => sub{ $self->{write_buffer} ne '' },
+        [ $self->{info_pipe}, r => sub { $self->_handle_info_read() }, $noi ],
         [ $self->{pty}, r => sub { $self->_handle_pty_read() } ],
-        [ $self->{pty}, w => sub { $self->_handle_pty_write() } ];
+        [ $self->{pty}, w => sub { $self->_handle_pty_write() } ]);
 }
 
-sub _stop_process {
+sub _send_sync {
     my $self = shift;
-    syswrite $self->{ctl_pipe}, "-w" . pack ("d", $self->{timeout});
-    $self->{waiting} = 1;
-}
-
-sub _start_process {
-    syswrite shift->{ctl_pipe}, "+";
+    return if $self->{sent_sync};
+    syswrite $self->{ctl_pipe}, "s";
+    $self->{sent_sync} = 1;
 }
 # }}}
 # I/O operations {{{
@@ -297,30 +292,13 @@ sub recv {
         return;
     }
 
-    $self->{timeout} = ($timeout || $_infinity) + time;
+    $self->{timeout} = defined $timeout ? $timeout + time : undef;
 
     do  {
-        if (!$self->{waiting}) {
-            $self->_start_process();
-            $self->_process_send();
-            $self->_stop_process();
-        }
-
-        eval { $self->_process_wait(); };
-        return undef if $@ eq "timeout\n";
-        die $@ if $@;
+        $self->_process_send();
+        $self->_send_sync();
+        return undef if $self->_process_wait();
     } while ($self->{write_buffer} ne '' && $self->{active});
-
-    if (!$self->{active}) {
-        # Reap the shell
-        waitpid($self->{shell_pid}, 0);
-
-        if (!defined $self->{exit_code}) {
-            # Get the shell crash code
-            $self->{exit_sig}  = WIFSIGNALED($?) ? WTERMSIG($?) : 0;
-            $self->{exit_code} = WIFEXITED($?) ? WEXITSTATUS($?) : 0;
-        }
-    }
 
     my $t = $self->{read_buffer};
     $self->{read_buffer} = '';
@@ -358,10 +336,12 @@ sub is_active {
 
 sub _wait_for_inactive {
     my $self = shift;
-    my $targ = (shift || $_infinity) + time;
+    my $targ = shift;
+
+    $targ = defined $targ ? $targ + time : undef;
 
     do {
-        $self->read($targ - time);
+        $self->read(defined $targ ? $targ - time : undef);
     } while ($targ > time && $self->is_active);
 
     !$self->is_active;

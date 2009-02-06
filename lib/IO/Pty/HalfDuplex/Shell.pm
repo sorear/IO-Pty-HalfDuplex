@@ -15,25 +15,12 @@ IO::Pty::HalfDuplex::Shell - Internal module used by IO::Pty::HalfDuplex
 
 This module implements the fake shell used by L<IO::Pty::HalfDuplex>, and is
 not intended to be used directly.  The new function runs the shell with
-I<command> as its only child.  Each time an 's' is received on I<ctl_pipe>,
-the child process is allowed to continue; a 'r' will be transmitted on
-I<info_pipe> if the process blocks on inpt
-I<ctl_pipe>:
+I<command> as its only child, and sends its pid in 4 bytes on I<info_pipe>.
 
-=over
-
-=item C<+> Runs the slave in the foreground.
-
-=item C<-> Runs the slave in the background.
-
-=item C<w> Waits for the slave.
-
-C<w> accepts a single argument, a native-format double (C<"d"> pack format),
-which is a timeout time.  It replies with C<r>, if the slave has blocked on
-STDIN (and is thus done writing), C<d> if the slave has died (followed by
-the death signal and exit code as bytes), or C<t> if the timeout was reached.
-
-=back
+Each time an 's' is received on I<ctl_pipe>, the child process is allowed
+to continue; a 'r' will be transmitted on I<info_pipe> if the process blocks
+on input, or a 'd' followed by signal and exit status (as bytes) if the
+process dies.
 
 =BUGS
 
@@ -61,118 +48,66 @@ package IO::Pty::HalfDuplex::Shell;
 use strict;
 use warnings;
 use POSIX qw(:signal_h :sys_wait_h :termios_h :unistd_h);
-use Time::HiRes qw(time alarm);
 
 # }}}
-# wait {{{
-# Handle something interesting happening to the slave.
-sub handle_wait {
+# do_wait {{{
+# Properly wait for the child; does not return (and emits d-code) on exit
+sub do_wait {
     my $self = shift;
 
-    my $timeout;
-    sysread($self->{ctl_pipe}, $timeout, length(pack "d", 0));
-    $timeout = unpack "d", $timeout;
-
-again:
-    # If protocol is followed, when we get to wait the process is in
-    # ACTIVE state and cannot stop more than once
-    eval {
-        $SIG{ALRM} = sub {die "alarm\n"};
-        my $t = $timeout - time;
-        die "alarm\n" if $t < 0;
-
-        alarm($timeout - time);
-
-        waitpid($self->{slave_pid}, WUNTRACED) or die "waitpid: $!";
-
-        alarm(0);
-        $SIG{ALRM} = 'IGNORE';
-    };
-
-    if ($@) {
-        die $@ if ($@ ne "alarm\n");
-        syswrite($self->{info_pipe}, "t");
-        return;
-    }
+    waitpid($self->{slave_pid}, WUNTRACED) == $self->{slave_pid}
+        or die "waitpid: $!";
 
     # Older Perls (<= 5.8.8) put all status codes into $?.  Newer ones
     # will only put exits there, and signals go elsewhere.  Argh.
     my $stat = ${^CHILD_ERROR_NATIVE} || $?;
 
-    if (WIFSTOPPED($stat) && WSTOPSIG($stat) == SIGTTIN) {
-        # Slave has stopped on tty input.  Hopefully, it's read and
-        # processed everything and we can send the over; but it could
-        # also just have taken a long time to read and outwaited out
-        # feeding sleep.
-        #
-        # We can tell the difference by seeing if there is readable data.
-        # Note that in ICANON mode, it is possible for there to be
-        # unreadable data.  That's OK, since it's equally unreadable to
-        # both of us.
-        my $rin = '';
-        vec($rin, 0, 1) = 1;
-        if (select($rin, undef, undef, 0)) {
-            # Oh, well.  Bump the wait time and try again.
-            $self->{wait_time} *= 1.5;
-            $self->handle_start();
-            $self->handle_stop();
-            goto again;
-        } else {
-            # There's no readable data, so the slave must be blocking
-            # for actual input (unless it used a blocking input ioctl,
-            # which is a really ugly special case).
-            $self->{wait_time} = 0.01;
-            syswrite($self->{info_pipe}, "r", 1);
-        }
-    } elsif (WIFSTOPPED($stat)) {
-        # Stopped, but not tty input.  Probably a user intervention;
-        # ignore and wait until they restart it (and something else happens).
-        #
-        # Possible future direction: note this fact, so we don't attempt to
-        # restart in _cont.
-        goto again;
-    } elsif (WIFSIGNALED($stat) || WIFEXITED($stat)) {
-        # Oops.  Slave died.
-        syswrite($self->{info_pipe}, "d" .
+    if (WIFEXITED($stat) || WIFSIGNALED($stat)) {
+        syswrite $self->{info_pipe}, "d" .
             chr(WIFSIGNALED($stat) ? WTERMSIG($stat) : 0) .
-            chr(WIFEXITED($stat) ? WEXITSTATUS($stat) : 0), 3);
-        exit;
-    } else {
-        # Wait, _what_ happened?
-        goto again;
+            chr(WIFEXITED($stat) ? WEXITSTATUS($stat) : 0);
+        
+        # We got here by a fork, so we certainly have stale buffers
+        _exit 0;
     }
+
+    die "POSIX.1 says this can't happen" if !WIFSTOPPED($stat);
 }
 # }}}
-# stops and starts {{{
-# Set terminal bits to enable or disable terminal access to the slave
-sub grab_tty {
-    my $self = shift;
-    tcsetpgrp(0, shift() ? $self->{pid} : $self->{slave_pid})
-        or die "tcsetpgrp: $!";
-}
+# try_step {{{
+# Try once to get the slave to process input.  Returns true if successful.
+# The slave _will_ be stopped(TTIN) on entry to this function.
+sub try_step {
+    my ($self, $lag) = @_;
 
-# We've just been asked to let the slave continue for a bit.  This will only
-# be called (barring protocol errors) with the tty grabbed and the child
-# stopped; it could either be the result of SIGUSR1, or the child stopped
-# with input in the buffer.
-sub handle_start {
-    my $self = shift;
+    # Put the process into the foreground so it can read input
+    tcsetpgrp(0, $self->{slave_pid});
+    kill -(SIGCONT), $self->{slave_pid};
 
-    # Allow the slave to read data
-    $self->grab_tty(0);
-    kill(-(SIGCONT), $self->{slave_pid});
-}
+    # Force a context switch
+    select undef, undef, undef, $lag;
 
-sub handle_stop {
-    my $self = shift;
-    # Force a context switch, allow some time
-    select undef, undef, undef, $self->{wait_time};
+    # Stop it so it can be put in the background
+    kill -(SIGSTOP), $self->{slave_pid};
+    $self->do_wait;
 
-    # Force the slave into the background; it should get a SIGTTIN if and when
-    # it is reading
-    kill(-(SIGSTOP), $self->{slave_pid});
-    $self->grab_tty(1);
-    kill(-(SIGCONT), $self->{slave_pid});
+    # Now put it there
+    tcsetpgrp(0, $self->{pid});
+    kill -(SIGCONT), $self->{slave_pid};
+    
+    # Wait until it blocks on input
+    $self->do_wait;
+
+    # Slave has stopped on tty input.  Hopefully, it's read and processed
+    # everything and we can send the over; but it could also just have taken a
+    # long time to read and outwaited out feeding sleep.
+    #
+    # We can tell the difference by seeing if there is readable data.  Note
+    # that in ICANON mode, it is possible for there to be unreadable data.
+    # That's OK, since it's equally unreadable to both of us.
+    my $rin = '';
+    vec($rin, 0, 1) = 1;
+    return select($rin, undef, undef, 0) ? 1 : 0;
 }
 # }}}
 # control loop and startup {{{
@@ -184,9 +119,8 @@ sub loop {
         my $buf = '';
         sysread($self->{ctl_pipe}, $buf, 1) > 0 or die "read(ctl): $!";
 
-        $self->handle_wait() if $buf eq 'w';
-        $self->handle_start() if $buf eq '+';
-        $self->handle_stop() if $buf eq '-';
+        for (my $lag = 0.01; !$self->try_step($lag); $lag *= 1.5) {}
+        syswrite($self->{info_pipe}, "r");
     }
 }
 
@@ -202,6 +136,7 @@ sub spawn {
         # in the background.
         $self->{slave_pid} = $$;
         setpgrp($self->{slave_pid}, $self->{slave_pid});
+        kill SIGSTOP, $self->{slave_pid};
 
         exec(@{$self->{command}});
         die "exec: $!";
@@ -210,13 +145,15 @@ sub spawn {
     syswrite($self->{info_pipe}, pack('N', $self->{slave_pid}));
 
     setpgrp($self->{slave_pid}, $self->{slave_pid});
+
+    # It simplifies the API if the child can be assumed to start stopped
+    $self->do_wait;
 }
 
 sub new {
     my $class = shift;
     my $self = bless {
         pid => $$,
-        wait_time => 0.01,
         @_
     }, $class;
 
