@@ -15,7 +15,9 @@ IO::Pty::HalfDuplex::Shell - Internal module used by IO::Pty::HalfDuplex
 
 This module implements the fake shell used by L<IO::Pty::HalfDuplex>, and is
 not intended to be used directly.  The new function runs the shell with
-I<command> as its only child; the following commands are accepted on the
+I<command> as its only child.  Each time an 's' is received on I<ctl_pipe>,
+the child process is allowed to continue; a 'r' will be transmitted on
+I<info_pipe> if the process blocks on inpt
 I<ctl_pipe>:
 
 =over
@@ -58,7 +60,7 @@ package IO::Pty::HalfDuplex::Shell;
 
 use strict;
 use warnings;
-use POSIX qw(:signal_h :sys_wait_h);
+use POSIX qw(:signal_h :sys_wait_h :termios_h :unistd_h);
 use Time::HiRes qw(time alarm);
 
 # }}}
@@ -113,14 +115,14 @@ again:
             # Oh, well.  Bump the wait time and try again.
             $self->{wait_time} *= 1.5;
             $self->handle_start();
-            $self->handle_end();
+            $self->handle_stop();
             goto again;
         } else {
             # There's no readable data, so the slave must be blocking
             # for actual input (unless it used a blocking input ioctl,
             # which is a really ugly special case).
             $self->{wait_time} = 0.01;
-            syswrite($self->{data_pipe}, "r", 1);
+            syswrite($self->{info_pipe}, "r", 1);
         }
     } elsif (WIFSTOPPED($stat)) {
         # Stopped, but not tty input.  Probably a user intervention;
@@ -131,9 +133,9 @@ again:
         goto again;
     } elsif (WIFSIGNALED($stat) || WIFEXITED($stat)) {
         # Oops.  Slave died.
-        syswrite($self->{data_pipe}, "d" .
+        syswrite($self->{info_pipe}, "d" .
             chr(WIFSIGNALED($stat) ? WTERMSIG($stat) : 0) .
-            chr(WIFSIGNALED($stat) ? 0 : WEXITSTATUS($stat)), 3);
+            chr(WIFEXITED($stat) ? WEXITSTATUS($stat) : 0), 3);
         exit;
     } else {
         # Wait, _what_ happened?
@@ -158,7 +160,7 @@ sub handle_start {
 
     # Allow the slave to read data
     $self->grab_tty(0);
-    kill(-$self->{slave_pid}, SIGCONT);
+    kill(-(SIGCONT), $self->{slave_pid});
 }
 
 sub handle_stop {
@@ -168,9 +170,9 @@ sub handle_stop {
 
     # Force the slave into the background; it should get a SIGTTIN if and when
     # it is reading
-    kill(-$self->{slave_pid}, SIGSTOP);
+    kill(-(SIGSTOP), $self->{slave_pid});
     $self->grab_tty(1);
-    kill(-$self->{slave_pid}, SIGCONT);
+    kill(-(SIGCONT), $self->{slave_pid});
 }
 # }}}
 # control loop and startup {{{
@@ -200,27 +202,27 @@ sub spawn {
         # in the background.
         $self->{slave_pid} = $$;
         setpgrp($self->{slave_pid}, $self->{slave_pid});
-        tcsetpgrp(0, $self->{pid});
 
         exec(@{$self->{command}});
         die "exec: $!";
     }
 
-    syswrite($self->{data_pipe}, pack('N', $self->{slave_pid}));
+    syswrite($self->{info_pipe}, pack('N', $self->{slave_pid}));
 
     setpgrp($self->{slave_pid}, $self->{slave_pid});
-    tcsetpgrp(0, $self->{pid});
 }
 
 sub new {
     my $class = shift;
-    my $self = bless $class, {
+    my $self = bless {
         pid => $$,
         wait_time => 0.01,
         @_
-    };
+    }, $class;
 
-    $self->setup_signals();
+    # disable tostop, also allows tcsetpgrp stealing
+    $SIG{TTOU} = 'IGNORE';
+
     $self->spawn();
     $self->loop();
 }

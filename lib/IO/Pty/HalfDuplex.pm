@@ -129,7 +129,7 @@ sub spawn {
     pipe (my $p1r, my $p1w) || croak "Failed to create a pipe";
     pipe (my $p2r, my $p2w) || croak "Failed to create a pipe";
 
-    $self->{data_pipe} = $p1r;
+    $self->{info_pipe} = $p1r;
     $self->{ctl_pipe} = $p2w;
 
     defined ($self->{shell_pid} = fork) || croak "fork: $!";
@@ -151,7 +151,7 @@ sub spawn {
             or carp "Couldn't reopen STDERR for writing";
         close $slave;
 
-        IO::Pty::HalfDuplex::Shell->new(data_pipe => $p1w, ctl_pipe => $p2r,
+        IO::Pty::HalfDuplex::Shell->new(info_pipe => $p1w, ctl_pipe => $p2r,
             command => [@_]);
     }
 
@@ -318,7 +318,7 @@ sub recv {
         if (!defined $self->{exit_code}) {
             # Get the shell crash code
             $self->{exit_sig}  = WIFSIGNALED($?) ? WTERMSIG($?) : 0;
-            $self->{exit_code} = WIFEXITED($?) ? WEXITCODE($?) : 0;
+            $self->{exit_code} = WIFEXITED($?) ? WEXITSTATUS($?) : 0;
         }
     }
 
