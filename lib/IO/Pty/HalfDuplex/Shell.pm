@@ -126,7 +126,7 @@ sub try_step {
     # That's OK, since it's equally unreadable to both of us.
     my $rin = '';
     vec($rin, 0, 1) = 1;
-    return select($rin, undef, undef, 0) ? 1 : 0;
+    return select($rin, undef, undef, 0) ? 0 : 1;
 }
 # }}}
 # control loop and startup {{{
