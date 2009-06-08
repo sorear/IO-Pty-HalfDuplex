@@ -217,6 +217,9 @@ sub _handle_pty_write {
 sub _handle_pty_read {
     my ($self) = @_;
 
+    # Linux does not like reading from ptys after the session leader exits
+    return if !$self->{active};
+
     defined (sysread $self->{pty}, $self->{read_buffer}, $self->{buffer_size},
         length $self->{read_buffer}) or die "read(pty): $!";
 }
