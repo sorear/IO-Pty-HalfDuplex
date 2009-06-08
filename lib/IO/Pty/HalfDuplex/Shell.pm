@@ -48,6 +48,7 @@ package IO::Pty::HalfDuplex::Shell;
 use strict;
 use warnings;
 use POSIX qw(:signal_h :sys_wait_h :termios_h :unistd_h);
+my $need_bsd_hack = ($^O =~ /bsd/i);
 
 # }}}
 # do_wait {{{
@@ -105,7 +106,7 @@ sub try_step {
     #
     # This is the best non-destructive way I could find.  Requires three
     # system calls, grr.
-    if (1) {
+    if ($need_bsd_hack) {
         my $attr = POSIX::Termios->new;
         $attr->getattr(0);
         $attr->setcc(&POSIX::VMIN, $attr->getcc(&POSIX::VMIN) + 1);
