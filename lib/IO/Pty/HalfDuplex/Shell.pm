@@ -139,7 +139,11 @@ sub loop {
         my $buf = '';
         sysread($self->{ctl_pipe}, $buf, 1) > 0 or die "read(ctl): $!";
 
-        for (my $lag = 0.01; !$self->try_step($lag); $lag *= 1.5) {}
+        # BSD adds a 0.5 second delay to every time a process reads while
+        # in the background.  This is a real problem for us, so minimize
+        # needed read attempts.
+        for (my $lag = ($need_bsd_hack ? 0.15 : 0.02);
+             !$self->try_step($lag); $lag *= 1.5) {}
         syswrite($self->{info_pipe}, "r");
     }
 }
