@@ -94,6 +94,25 @@ sub try_step {
     # Now put it there
     tcsetpgrp(0, $self->{pid});
     kill -(SIGCONT), $self->{slave_pid};
+
+    # If the process was not in the tty driver, it's now on its way to
+    # stopping.  If it was, and you're on Linux, it will transition to T
+    # automatically.  On BSDs it needs a bit of an extra kick, because
+    # even tcsetpgrp, sigstop, and sigcont won't interrupt a tty wait.
+    #
+    # Insidiously, this doesn't manifest in the shell because typing "bg"
+    # kicks all processes waiting on the tty wchan.
+    #
+    # This is the best non-destructive way I could find.  Requires three
+    # system calls, grr.
+    if (1) {
+        my $attr = POSIX::Termios->new;
+        $attr->getattr(0);
+        $attr->setcc(&POSIX::VMIN, $attr->getcc(&POSIX::VMIN) + 1);
+        $attr->setattr(0, &POSIX::TCSANOW);
+        $attr->setcc(&POSIX::VMIN, $attr->getcc(&POSIX::VMIN) - 1);
+        $attr->setattr(0, &POSIX::TCSANOW);
+    }
     
     # Wait until it blocks on input
     $self->do_wait;
