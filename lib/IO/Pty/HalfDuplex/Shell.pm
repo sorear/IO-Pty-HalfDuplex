@@ -155,6 +155,8 @@ sub spawn {
         # in the background.
         $self->{slave_pid} = $$;
         setpgrp($self->{slave_pid}, $self->{slave_pid});
+        # Make sure the important job control signals aren't ignored
+        $SIG{CHLD} = $SIG{TTIN} = $SIG{TSTP} = $SIG{CONT} = 'DEFAULT';
         kill SIGSTOP, $self->{slave_pid};
 
         exec(@{$self->{command}});
