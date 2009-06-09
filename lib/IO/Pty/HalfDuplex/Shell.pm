@@ -48,7 +48,7 @@ package IO::Pty::HalfDuplex::Shell;
 use strict;
 use warnings;
 use POSIX qw(:signal_h :sys_wait_h :termios_h :unistd_h);
-my $need_bsd_hack = ($^O =~ /bsd/i);
+my $need_bsd_hack = ($^O =~ /bsd|darwin/i);
 
 # }}}
 # do_wait {{{
