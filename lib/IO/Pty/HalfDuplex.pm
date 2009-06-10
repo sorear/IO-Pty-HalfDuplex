@@ -78,7 +78,7 @@ use POSIX qw(:unistd_h :sys_wait_h :signal_h EIO);
 use Carp;
 use IO::Pty;
 use Time::HiRes qw(time);
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 our $_infinity = 1e1000;
 # }}}
 # new {{{
