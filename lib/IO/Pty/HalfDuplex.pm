@@ -74,7 +74,7 @@ The two-argument form of kill() interprets its second argument in the opposite s
 use strict;
 use warnings;
 use IO::Pty::HalfDuplex::Shell;
-use POSIX qw(:unistd_h :sys_wait_h :signal_h);
+use POSIX qw(:unistd_h :sys_wait_h :signal_h EIO);
 use Carp;
 use IO::Pty;
 use Time::HiRes qw(time);
@@ -217,11 +217,14 @@ sub _handle_pty_write {
 sub _handle_pty_read {
     my ($self) = @_;
 
-    # Linux does not like reading from ptys after the session leader exits
-    return if !$self->{active};
+    return if defined (sysread $self->{pty}, $self->{read_buffer},
+        $self->{buffer_size}, length $self->{read_buffer});
 
-    defined (sysread $self->{pty}, $self->{read_buffer}, $self->{buffer_size},
-        length $self->{read_buffer}) or die "read(pty): $!";
+    # Under Linux, any pty read can randomly return EIO if the
+    # session leader exits racily.
+    return if $! == &POSIX::EIO and $^O eq "linux";
+
+    die "read(pty): $!";
 }
 # }}}
 # Read internals {{{
