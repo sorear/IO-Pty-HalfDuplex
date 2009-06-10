@@ -3,8 +3,8 @@ use inc::Module::Install;
 name     'IO-Pty-HalfDuplex';
 all_from 'lib/IO/Pty/HalfDuplex.pm';
 
-build_requires 'Test::More';
-build_requires 'IO::Pty';
+requires 'IO::Pty';
+requires 'Time::HiRes';
 
 WriteAll;
 
