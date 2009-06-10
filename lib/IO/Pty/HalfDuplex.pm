@@ -428,6 +428,10 @@ spurious stop by C<IO::Pty::HalfDuplex>.  Under normal circumstances this
 manifests as a need to transmit at least one character before the starting
 screen is displayed.
 
+C<IO::Pty::HalfDuplex> relies on a forked-but-not-execed process to mediate
+job control, and as such any files open at spawn time will be closed until
+the slave is killed.
+
 C<IO::Pty::HalfDuplex> sends many continue signals to the slave process.  If
 the slave catches SIGCONT, you may see many spurious redraws.  If possible,
 modify your child to handle SIGTSTP instead.
