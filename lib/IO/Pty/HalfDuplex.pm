@@ -435,6 +435,12 @@ modify your child to handle SIGTSTP instead.
 C<IO::Pty::HalfDuplex> won't work with programs that rely on non-blocking
 input or generate output in other threads after blocking for input in one.
 
+While this module will theoretically work on any POSIX.1 compliant operating
+system, in practice it exercises many dark corners and has required
+bug-workaround code everywhere it has been tested.  It is known to work on
+Mac OS 10.5.7 and Linux 2.6.16.  On FreeBSD 7.0 it passes tests but is
+extremely slow due to a kernel bug with no obvious workaround.
+
 =head1 AUTHOR
 
 Stefan O'Rear, C<< <stefanor@cox.net> >>
