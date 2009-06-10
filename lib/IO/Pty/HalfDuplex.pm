@@ -362,7 +362,7 @@ C<kill()> takes an even number of arguments.  They are interpreted as pairs of s
 
 Returns 1 immediately if the process exited during a wait, 0 if it was successfully signalled but did not exit, and undef if the signalling failed.
 
-C<kill()> (with no arguments) is equivalent to C<kill(TERM => 3, KILL => 3)>.
+C<kill()> (with no arguments) is equivalent to C<< kill(TERM => 3, KILL => 3) >>.
 
 =cut
 
