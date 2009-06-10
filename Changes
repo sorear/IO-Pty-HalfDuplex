@@ -1,5 +1,9 @@
 Revision history for IO-Pty-HalfDuplex
 
-0.01    Fri Nov 14 11:29:09 2008
+0.02    ???
+        Removed a darcs backup file from packaging (oops)
+        Fixed Changes date for 0.01
+
+0.01    Tue Jun  9 18:36:15 PDT 2009
         First version, released on an unsuspecting world.
 
