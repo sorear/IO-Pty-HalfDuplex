@@ -4,23 +4,38 @@
 
 =head1 NAME
 
-IO::Pty::HalfDuplex::Shell - Internal module used by IO::Pty::HalfDuplex
+IO::Pty::HalfDuplex::JobControl - the default backend of IO::Pty::HalfDuplex
 
 =head1 SYNOPSIS
 
-    IO::Pty::HalfDuplex::Shell->new(ctl_pipe => $r1, info_pipe => $r2,
-        command => [@_]);
+    IO::Pty::HalfDuplex->new(backend => 'JobControl')
 
-=head1 DESCRIPTION
+=head1 CAVEATS
 
-This module implements the fake shell used by L<IO::Pty::HalfDuplex>, and is
-not intended to be used directly.  The new function runs the shell with
-I<command> as its only child, and sends its pid in 4 bytes on I<info_pipe>.
+C<IO::Pty::HalfDuplex::JobControl> is implemented using POSIX job control, and
+as such it requires foreground access to a controlling terminal.  Programs
+which interfere with process hierarchies, such as C<strace -f>, will break
+C<IO::Pty::HalfDuplex::JobControl>.
 
-Each time an 's' is received on I<ctl_pipe>, the child process is allowed
-to continue; a 'r' will be transmitted on I<info_pipe> if the process blocks
-on input, or a 'd' followed by signal and exit status (as bytes) if the
-process dies.
+Certain ioctls used by terminal-aware programs are treated as reads by POSIX
+job control.  If this is done while the input buffer is empty, it may cause a
+spurious stop by C<IO::Pty::HalfDuplex::JobControl>.  Under normal
+circumstances this manifests as a need to transmit at least one character
+before the starting screen is displayed.
+
+C<IO::Pty::HalfDuplex::JobControl> relies on a forked-but-not-execed process to
+mediate job control, and as such any files open at spawn time will be closed
+until the slave is killed.
+
+C<IO::Pty::HalfDuplex::JobControl> sends many continue signals to the slave
+process.  If the slave catches SIGCONT, you may see many spurious redraws.  If
+possible, modify your child to handle SIGTSTP instead.
+
+While this module will theoretically work on any POSIX.1 compliant operating
+system, in practice it exercises many dark corners and has required
+bug-workaround code everywhere it has been tested.  It is known to work on
+Mac OS 10.5.7 and Linux 2.6.16.  On FreeBSD 7.0 it passes tests but is
+extremely slow due to a kernel bug with no obvious workaround.
 
 =BUGS
 
@@ -43,10 +58,13 @@ under the same terms as Perl itself.
 
 # XXX Running this in a forked process holds all cloexec file descriptors open.
 
-package IO::Pty::HalfDuplex::Shell;
+package IO::Pty::HalfDuplex::JobControl;
 
 use strict;
 use warnings;
+
+use base 'IO::Pty::HalfDuplex::Ptyish';
+
 use POSIX qw(:signal_h :sys_wait_h :termios_h :unistd_h);
 my $need_bsd_hack = ($^O =~ /bsd|darwin/i);
 
@@ -78,7 +96,7 @@ sub do_wait {
 # try_step {{{
 # Try once to get the slave to process input.  Returns true if successful.
 # The slave _will_ be stopped(TTIN) on entry to this function.
-sub try_step {
+sub try_step_slave {
     my ($self, $lag) = @_;
 
     # Put the process into the foreground so it can read input
@@ -132,7 +150,7 @@ sub try_step {
 # }}}
 # control loop and startup {{{
 # Wait for, and process, commands
-sub loop {
+sub shell_loop {
     my $self = shift;
 
     while(1) {
@@ -143,14 +161,14 @@ sub loop {
         # in the background.  This is a real problem for us, so minimize
         # needed read attempts.
         for (my $lag = ($need_bsd_hack ? 0.15 : 0.02);
-             !$self->try_step($lag); $lag *= 1.5) {}
+             !$self->try_step_slave($lag); $lag *= 1.5) {}
         syswrite($self->{info_pipe}, "r");
     }
 }
 
 # This routine is responsible for creating the proper environment for the
 # slave to run in.
-sub spawn {
+sub shell_spawn {
     my $self = shift;
 
     die "fork: $!" unless defined ($self->{slave_pid} = fork);
@@ -176,18 +194,19 @@ sub spawn {
     $self->do_wait;
 }
 
-sub new {
-    my $class = shift;
-    my $self = bless {
+sub shell {
+    my $self = shift;
+    %$self = (
+        %$self,
         pid => $$,
         @_
-    }, $class;
+    );
 
     # disable tostop, also allows tcsetpgrp stealing
     $SIG{TTOU} = 'IGNORE';
 
-    $self->spawn();
-    $self->loop();
+    $self->shell_spawn();
+    $self->shell_loop();
 }
 1;
 # }}}

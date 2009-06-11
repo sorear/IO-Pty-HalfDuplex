@@ -9,7 +9,7 @@ use Test::More tests => 3;
 
 my $pty = IO::Pty::HalfDuplex->new;
 
-is(ref $pty, "IO::Pty::HalfDuplex", "new returns an object");
+ok($pty->isa("IO::Pty::HalfDuplex"), "new returns an object");
 
 ok(!$pty->is_active, "new pty is not active");
 
