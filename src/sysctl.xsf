@@ -1,0 +1,6 @@
+MODULE = HalfDuplex  PACKAGE = IO::Pty::HalfDuplex::SysctlProc  PREFIX = iphd_sysctl
+
+int
+iphd_sysctl_is_waiting(pid)
+    int pid
+
