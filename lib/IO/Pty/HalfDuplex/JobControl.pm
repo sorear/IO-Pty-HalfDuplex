@@ -71,7 +71,7 @@ my $need_bsd_hack = ($^O =~ /bsd|darwin/i);
 # }}}
 # do_wait {{{
 # Properly wait for the child; does not return (and emits d-code) on exit
-sub do_wait {
+sub _do_wait {
     my $self = shift;
 
     waitpid($self->{slave_pid}, WUNTRACED) == $self->{slave_pid}
@@ -96,7 +96,7 @@ sub do_wait {
 # try_step {{{
 # Try once to get the slave to process input.  Returns true if successful.
 # The slave _will_ be stopped(TTIN) on entry to this function.
-sub try_step_slave {
+sub _try_step_slave {
     my ($self, $lag) = @_;
 
     # Put the process into the foreground so it can read input
@@ -108,7 +108,7 @@ sub try_step_slave {
 
     # Stop it so it can be put in the background
     kill -(SIGSTOP), $self->{slave_pid};
-    $self->do_wait;
+    $self->_do_wait;
 
     # Now put it there
     tcsetpgrp(0, $self->{pid});
@@ -134,7 +134,7 @@ sub try_step_slave {
     }
     
     # Wait until it blocks on input
-    $self->do_wait;
+    $self->_do_wait;
 
     # Slave has stopped on tty input.  Hopefully, it's read and processed
     # everything and we can send the over; but it could also just have taken a
@@ -150,7 +150,7 @@ sub try_step_slave {
 # }}}
 # control loop and startup {{{
 # Wait for, and process, commands
-sub shell_loop {
+sub _shell_loop {
     my $self = shift;
 
     while(1) {
@@ -161,14 +161,14 @@ sub shell_loop {
         # in the background.  This is a real problem for us, so minimize
         # needed read attempts.
         for (my $lag = ($need_bsd_hack ? 0.15 : 0.02);
-             !$self->try_step_slave($lag); $lag *= 1.5) {}
+             !$self->_try_step_slave($lag); $lag *= 1.5) {}
         syswrite($self->{info_pipe}, "r");
     }
 }
 
 # This routine is responsible for creating the proper environment for the
 # slave to run in.
-sub shell_spawn {
+sub _shell_spawn {
     my $self = shift;
 
     die "fork: $!" unless defined ($self->{slave_pid} = fork);
@@ -191,10 +191,10 @@ sub shell_spawn {
     setpgrp($self->{slave_pid}, $self->{slave_pid});
 
     # It simplifies the API if the child can be assumed to start stopped
-    $self->do_wait;
+    $self->_do_wait;
 }
 
-sub shell {
+sub _shell {
     my $self = shift;
     %$self = (
         %$self,
@@ -205,8 +205,8 @@ sub shell {
     # disable tostop, also allows tcsetpgrp stealing
     $SIG{TTOU} = 'IGNORE';
 
-    $self->shell_spawn();
-    $self->shell_loop();
+    $self->_shell_spawn();
+    $self->_shell_loop();
 }
 1;
 # }}}

@@ -131,7 +131,7 @@ sub spawn {
             or carp "Couldn't reopen STDERR for writing";
         close $slave;
 
-        $self->shell(info_pipe => $p1w, ctl_pipe => $p2r,
+        $self->_shell(info_pipe => $p1w, ctl_pipe => $p2r,
             command => [@_]);
     }
 
@@ -346,7 +346,7 @@ sub close {
 # }}}
 # documentation tail {{{
 
-sub shell {
+sub _shell {
     my $class = ref(shift);
 
     die ($class eq 'IO::Pty::HalfDuplex::Ptyish')
