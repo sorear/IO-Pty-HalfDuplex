@@ -305,7 +305,7 @@ sub _wait_for_inactive {
     $targ = defined $targ ? $targ + time : undef;
 
     do {
-        $self->read(defined $targ ? $targ - time : undef);
+        $self->recv(defined $targ ? $targ - time : undef);
     } while ($targ > time && $self->is_active);
 
     !$self->is_active;
