@@ -58,6 +58,6 @@ HEADER
     unlink "HalfDuplex.xs";
 }
 
-makemaker_args(OBJECT => join(" ",@object));
+makemaker_args(OBJECT => join(" ","HalfDuplex$Config{_o}",@object));
 WriteAll;
 
