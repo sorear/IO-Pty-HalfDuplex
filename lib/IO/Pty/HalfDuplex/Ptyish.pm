@@ -212,7 +212,7 @@ sub _handle_pty_drain {
 
     while (1) {
         my $got = sysread $self->{pty}, $self->{read_buffer},
-            $self->{buffer_size}, length $self->{read_buffer});
+            $self->{buffer_size}, length $self->{read_buffer};
 
         return if defined $got && $got == 0;
         next if defined $got;
