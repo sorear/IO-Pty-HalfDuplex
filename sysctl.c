@@ -16,7 +16,7 @@ iphd_sysctl_is_waiting(int pid)
     addr[2] = KERN_PROC_PID;
     addr[3] = pid;
 
-    err = sysctl(addr, 4, &kip, &kipsz, NULL, NULL);
+    err = sysctl(addr, 4, &kip, &kipsz, NULL, 0);
 
     if (err < 0) {
         /* can happen due to races, so ignore XXX */
