@@ -37,6 +37,7 @@ package IO::Pty::HalfDuplex::PTrace;
 
 use strict;
 use warnings;
+use POSIX '_exit';
 
 use base 'IO::Pty::HalfDuplex::Ptyish';
 
