@@ -86,19 +86,50 @@ bugs require workarounds on many systems.  Most BSDs (but not recent Darwin)
 have a kernel bug which makes this unusably slow (several seconds per read).
 The default on UNIX.
 
+=item PTrace
+
+Using the highly nonportable I<ptrace> call.  Could be ported to most Unixes,
+but at present only works on i386 and amd64 FreeBSD; other popular platforms
+support simpler methods.
+
 =back
 
 =cut
+
+my $_default_backend = $ENV{IO_PTY_HALFDUPLEX_BACKEND};
+undef $_default_backend unless $_default_backend =~ /^[A-Za-z0-9_]+$/;
+
+sub _probe_backends {
+    # Only one backend can possibly work for these
+    return 'DOS' if $^O eq 'dos';
+    return 'WinDebug' if $^O eq 'MSWin32';
+
+    # anything else is either unsupported or a unix-a-like
+    # JobControl is the most portable, but is very inefficient
+    # on BSDkin other than Darwin
+
+    return 'JobControl' unless $^O =~ /bsd/i;
+
+    for my $back (qw/PTrace SysctlPoll JobControl/) {
+        eval {
+            local $SIG{__DIE__};
+            eval "require IO::Pty::HalfDuplex::$back";
+            return $back;
+        };
+    }
+    
+    die $@; # this shouldn't be possible
+}
 
 sub new {
     my $class = shift;
     my %args = @_;
 
-    if (! exists $args{backend}) {
-        $args{backend} = 'JobControl';
+    if (! defined $args{backend}) {
+        $args{backend} = ($_default_backend ||= _probe_backends());
+    } else {
+        eval "require IO::Pty::HalfDuplex::$args{backend}";
     }
-
-    require "IO/Pty/HalfDuplex/" . $args{backend} . ".pm";
 
     ("IO::Pty::HalfDuplex::" . $args{backend})->new(@_);
 }
@@ -107,12 +138,12 @@ sub new {
 # If not, or if your system doesn't support XS, you can still use
 # the pure-Perl backends (JobControl and maybe Stupid).
 
-#eval {
+eval {
     local $SIG{__DIE__};
 
     require XSLoader;
     &XSLoader::load("IO::Pty::HalfDuplex", $VERSION);
-#};
+};
 
 1;
 
