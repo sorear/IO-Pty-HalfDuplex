@@ -47,7 +47,7 @@ if ($xs) {
 #include "perl.h"
 #include "XSUB.h"
 
-MODULE = HalfDuplex  PACKAGE = IO::Pty::HalfDuplex
+MODULE = IO::Pty::HalfDuplex  PACKAGE = IO::Pty::HalfDuplex
 
 PROTOTYPES: ENABLE
 
