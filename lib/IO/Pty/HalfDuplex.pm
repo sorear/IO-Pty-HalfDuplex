@@ -66,6 +66,8 @@ The two-argument form of kill() interprets its second argument in the opposite s
 use strict;
 use warnings;
 
+use 5.006_002;
+
 our $VERSION = '0.02';
 # }}}
 # new {{{
