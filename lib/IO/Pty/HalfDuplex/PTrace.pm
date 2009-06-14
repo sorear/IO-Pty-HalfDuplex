@@ -100,6 +100,9 @@ sub _shell_spawn {
     }
 
     syswrite($self->{info_pipe}, pack('N', $self->{slave_pid}));
+
+    _continue_to_next_read $self->{slave_pid}
+        or $self->report_death;
 }
 
 sub _shell {
