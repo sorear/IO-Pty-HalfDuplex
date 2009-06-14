@@ -125,9 +125,9 @@ sub new {
 
     if (! defined $args{backend}) {
         $args{backend} = ($_default_backend ||= _probe_backends());
-    } else {
-        eval "require IO::Pty::HalfDuplex::$args{backend}";
     }
+
+    eval "require IO::Pty::HalfDuplex::$args{backend}";
 
     ("IO::Pty::HalfDuplex::" . $args{backend})->new(@_);
 }
