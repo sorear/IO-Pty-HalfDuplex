@@ -14,7 +14,8 @@ my @chunks = qw(ptrace sysctl);
 my @object;
 my $xs = '';
 
-WriteAll(OBJECT => [ map { "src/$_.o" } @chunks ]);
+makemaker_args(OBJECT => [ map { "src/$_.o" } @chunks ]);
+WriteAll;
 
 for my $chunk (@chunks) {
     my $src = "src/$chunk.c";
@@ -45,5 +46,6 @@ if ($xs) {
     unlink "HalfDuplex.xs";
 }
 
-WriteAll(OBJECT => \@object);
+makemaker_args(OBJECT => \@object);
+WriteAll;
 
