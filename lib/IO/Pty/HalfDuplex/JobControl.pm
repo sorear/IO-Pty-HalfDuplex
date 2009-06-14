@@ -37,7 +37,7 @@ bug-workaround code everywhere it has been tested.  It is known to work on
 Mac OS 10.5.7 and Linux 2.6.16.  On FreeBSD 7.0 it passes tests but is
 extremely slow due to a kernel bug with no obvious workaround.
 
-=BUGS
+=head1 BUGS
 
 See L<IO::Pty::HalfDuplex>.
 
