@@ -41,7 +41,18 @@ for my $chunk (@chunks) {
 if ($xs) {
     open XS, ">src/HalfDuplex.xs" or
         die "Failed to open xs-file for output: $!";
-    print XS "/* Automatically generated from src/ *.xsf by Makefile.PL */\n";
+    print XS <<HEADER ;
+/* Automatically generated from src/ *.xsf by Makefile.PL */
+
+#include "EXTERN.h"
+#include "perl.h"
+#include "XSUB.h"
+
+MODULE = HalfDuplex  PACKAGE = IO::Pty::HalfDuplex
+
+PROTOTYPES: ENABLE
+
+HEADER
     print XS $xs;
     close XS or die "Failed to close xs-file: $!";
     makemaker_args(
