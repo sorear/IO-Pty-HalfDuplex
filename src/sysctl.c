@@ -1,3 +1,4 @@
+#include <sys/types.h>
 #include <sys/sysctl.h>
 #include <sys/user.h>
 #include <string.h>
@@ -6,6 +7,7 @@ int
 iphd_sysctl_is_waiting(int pid)
 {
     struct kinfo_proc kip;
+    size_t kipsz = sizeof(kip);
     int addr[4];
     int err;
 
@@ -14,7 +16,7 @@ iphd_sysctl_is_waiting(int pid)
     addr[2] = KERN_PROC_PID;
     addr[3] = pid;
 
-    err = sysctl(addr, 4, NULL, NULL, &kip, sizeof(kip));
+    err = sysctl(addr, 4, &kip, &kipsz, NULL, NULL);
 
     if (err < 0) {
         /* can happen due to races, so ignore XXX */
