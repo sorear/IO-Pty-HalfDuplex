@@ -13,6 +13,8 @@
 #include <sys/syscall.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/wait.h>
+
 
 #ifdef __FreeBSD__
 #include <machine/reg.h>
@@ -48,7 +50,7 @@ pt_wait(int pid, int *status)
 {
     pt_maybe_die("waitpid", waitpid(pid, status, 0));
 
-    NATIVE_ERROR_SET(*status);
+    STATUS_NATIVE_SET(*status);
 
     return (WIFSTOPPED(*status)) != 0;
 }
@@ -98,6 +100,8 @@ pt_continue_sysenter(int pid)
 
         signo = WSTOPSIG(status);
     }
+
+    return 1;
 }
 
 #ifdef PT_TO_SCE
@@ -107,6 +111,7 @@ pt_continue_sysenter(int pid)
 static int
 pt_continue_sysexit(int pid)
 {
+    (void) pid;
     return 1;
 }
 #else
@@ -120,12 +125,12 @@ pt_is_blocky_read(int pid)
     int call, arg;
 #if defined(__FreeBSD__) && defined(__i386__)
     struct reg rg;
-    ptrace(PT_GETREGS, pid, &rg, 0);
+    ptrace(PT_GETREGS, pid, (void*)&rg, 0);
     call = rg.r_eax;
     arg = ptrace(PT_READ_D, pid, (void *) (rg.r_esp + sizeof(int)), 0);
 #elif defined(__FreeBSD__) && defined(__amd64__)
     struct reg rg;
-    ptrace(PT_GETREGS, pid, &rg, 0);
+    ptrace(PT_GETREGS, pid, (void*)&rg, 0);
     call = rg.r_rax;
     arg = ptrace(PT_READ_D, pid, (void *) (rg.r_rsp + sizeof(register_t)), 0);
 #else
