@@ -111,14 +111,12 @@ sub _probe_backends {
     return 'JobControl' unless $^O =~ /bsd/i;
 
     for my $back (qw/PTrace SysctlPoll JobControl/) {
-        eval {
-            local $SIG{__DIE__};
-            eval "require IO::Pty::HalfDuplex::$back";
-            return $back;
-        };
+        eval "local \$SIG{__DIE__}; require IO::Pty::HalfDuplex::$back; 1"
+            and return $back;
     }
     
-    die $@; # this shouldn't be possible
+    # it shouldn't be possible to get here
+    die $@;
 }
 
 sub new {
