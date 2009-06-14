@@ -14,12 +14,12 @@ my @chunks = qw(ptrace sysctl);
 my @object;
 my $xs = '';
 
-makemaker_args(OBJECT => [ map { "src/$_.o" } @chunks ]);
+makemaker_args(OBJECT => [ map { "$_.o" } @chunks ]);
 WriteAll;
 
 for my $chunk (@chunks) {
-    my $src = "src/$chunk.c";
-    my $obj = "src/$chunk$Config{_o}";
+    my $src = "$chunk.c";
+    my $obj = "$chunk$Config{_o}";
 
     unlink $obj;  # no error check
 
@@ -28,8 +28,8 @@ for my $chunk (@chunks) {
     if (system("make $obj") == 0 && -s $obj) {
         # Oooh, it works
         local $/;
-        open FRAGMENT, "src/$_.xsf" or die
-            "Failed to open fragment src/$_.xsf: $!";
+        open FRAGMENT, "$chunk.xsf" or die
+            "Failed to open fragment $chunk.xsf: $!";
         $xs .= <FRAGMENT>;
         close FRAGMENT;
 
@@ -39,7 +39,7 @@ for my $chunk (@chunks) {
 
 if ($xs) {
     open XS, ">HalfDuplex.xs" or die "Failed to open xs-file for output: $!";
-    print XS "/* Automatically generated from src/*.xsf by Makefile.PL */\n";
+    print XS "/* Automatically generated from *.xsf by Makefile.PL */\n";
     print XS $xs;
     close XS or die "Failed to close xs-file: $!";
 } else {
