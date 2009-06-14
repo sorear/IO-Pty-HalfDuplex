@@ -30,7 +30,7 @@ for my $chunk (@chunks) {
         local $/;
         open FRAGMENT, "$chunk.xsf" or die
             "Failed to open fragment $chunk.xsf: $!";
-        $xs .= <FRAGMENT>;
+        $xs .= "\n" . <FRAGMENT>;
         close FRAGMENT;
 
         push @object, $obj;
