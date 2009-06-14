@@ -37,7 +37,7 @@ package IO::Pty::HalfDuplex::PTrace;
 
 use strict;
 use warnings;
-use POSIX '_exit', ':sys_wait_h';
+use POSIX '_exit', ':sys_wait_h', 'tcsetpgrp';
 
 use base 'IO::Pty::HalfDuplex::Ptyish';
 
@@ -71,11 +71,14 @@ sub _shell_loop {
         while (1) {
             my $rin = '';
             vec($rin, 0, 1) = 1;
+            tcsetpgrp(0, $self->{pid});
             last unless select($rin, undef, undef, 0);
+            tcsetpgrp(0, $self->{slave_pid});
             
             _continue_to_next_read($self->{slave_pid})
                 or $self->_report_death;
         }
+        tcsetpgrp(0, $self->{slave_pid});
 
         syswrite($self->{info_pipe}, "r");
     }
@@ -99,6 +102,7 @@ sub _shell_spawn {
         die "exec: $!";
     }
 
+    tcsetpgrp(0, $self->{slave_pid});
     syswrite($self->{info_pipe}, pack('N', $self->{slave_pid}));
 
     _continue_to_next_read $self->{slave_pid}
