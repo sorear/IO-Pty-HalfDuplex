@@ -13,7 +13,26 @@ requires 'Time::HiRes';
 my @chunks = qw(ptrace sysctl);
 my @object;
 my @c;
+my @using;
 my $xs = '';
+
+print <<NOTE ;
+Makefile.PL is now attempting to determine which XS-based IO::Pty::HalfDuplex
+backends will compile on your system ...
+
+NOTE
+
+open OLD_STDOUT, ">&STDOUT";
+open OLD_STDERR, ">&STDERR";
+
+open STDOUT, ">configure.log";
+open STDERR, ">&STDOUT";
+
+print STDOUT <<NOTE ;
+These are the results of configuration probes; any errors here will not
+prevent IO::Pty::HalfDuplex from building.
+
+NOTE
 
 makemaker_args(OBJECT => join(" ", map { "$_.o" } @chunks));
 WriteAll;
@@ -36,8 +55,15 @@ for my $chunk (@chunks) {
 
         push @object, $obj;
         push @c, $src;
+        push @using, $chunk;
     }
 }
+
+open STDOUT, ">&OLD_STDOUT"; close OLD_STDOUT;
+open STDERR, ">&OLD_STDERR"; close OLD_STDERR;
+
+print "Done.  We are building ",
+    (@using ? "with: " . join(", ", @using) : "without XS") . ".\n";
 
 if ($xs) {
     open XS, ">HalfDuplex.xs" or
