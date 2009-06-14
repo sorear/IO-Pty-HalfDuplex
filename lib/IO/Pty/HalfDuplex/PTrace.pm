@@ -37,7 +37,7 @@ package IO::Pty::HalfDuplex::PTrace;
 
 use strict;
 use warnings;
-use POSIX '_exit';
+use POSIX '_exit', ':sys_wait_h';
 
 use base 'IO::Pty::HalfDuplex::Ptyish';
 
@@ -102,7 +102,7 @@ sub _shell_spawn {
     syswrite($self->{info_pipe}, pack('N', $self->{slave_pid}));
 
     _continue_to_next_read $self->{slave_pid}
-        or $self->report_death;
+        or $self->_report_death;
 }
 
 sub _shell {
