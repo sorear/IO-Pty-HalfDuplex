@@ -97,7 +97,7 @@ support simpler methods.
 =cut
 
 my $_default_backend = $ENV{IO_PTY_HALFDUPLEX_BACKEND};
-undef $_default_backend unless $_default_backend =~ /^[A-Za-z0-9_]+$/;
+undef $_default_backend unless ($_default_backend || '') =~ /^[A-Za-z0-9_]+$/;
 
 sub _probe_backends {
     # Only one backend can possibly work for these
