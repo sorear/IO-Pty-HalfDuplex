@@ -128,6 +128,7 @@ sub new {
     }
 
     eval "require IO::Pty::HalfDuplex::$args{backend}";
+    die $@ if $@;
 
     ("IO::Pty::HalfDuplex::" . $args{backend})->new(@_);
 }
