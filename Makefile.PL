@@ -12,6 +12,7 @@ requires 'Time::HiRes';
 
 my @chunks = qw(ptrace sysctl);
 my @object;
+my @c;
 my $xs = '';
 
 makemaker_args(OBJECT => join(" ", map { "$_.o" } @chunks));
@@ -34,6 +35,7 @@ for my $chunk (@chunks) {
         close FRAGMENT;
 
         push @object, $obj;
+        push @c, $src;
     }
 }
 
@@ -54,10 +56,12 @@ PROTOTYPES: ENABLE
 HEADER
     print XS $xs;
     close XS or die "Failed to close xs-file: $!";
+    push @object, "HalfDuplex$Config{_o}";
+    push @c, "HalfDuplex.c";
 } else {
     unlink "HalfDuplex.xs";
 }
 
-makemaker_args(OBJECT => join(" ","HalfDuplex$Config{_o}",@object));
+makemaker_args(OBJECT => join(" ",@object), C => \@c);
 WriteAll;
 
