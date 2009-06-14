@@ -107,12 +107,12 @@ sub new {
 # If not, or if your system doesn't support XS, you can still use
 # the pure-Perl backends (JobControl and maybe Stupid).
 
-eval {
+#eval {
     local $SIG{__DIE__};
 
-    require DynaLoader;
-    &DynaLoader::bootstrap("IO::Pty::HalfDuplex");
-};
+    require XSLoader;
+    &XSLoader::load("IO::Pty::HalfDuplex", $VERSION);
+#};
 
 1;
 
