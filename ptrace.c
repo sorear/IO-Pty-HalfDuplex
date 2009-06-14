@@ -74,7 +74,7 @@ iphd_ptrace_fork_traced(void)
     if (!pt_wait(cpid, &status)) return -1;
 
 #ifdef PTRACE_O_TRACESYSGOOD
-    if (ptrace(cpid, PTRACE_SETOPTIONS, 0, PTRACE_O_TRACESYSGOOD) < 0)
+    if (ptrace(PTRACE_SETOPTIONS, cpid, 0, PTRACE_O_TRACESYSGOOD) < 0)
         have_tracesysgood = 0;
 #endif
 
@@ -88,13 +88,13 @@ pt_continue_sysenter(int pid)
     int signo = 0;
     
     while (signo != SYSCALL_SIG) {
-        pt_maybe_die("ptrace(cont)", ptrace(pid,
+        pt_maybe_die("ptrace(cont)", ptrace(
 #ifdef PT_TO_SCE
                 PT_TO_SCE,
 #else
                 PT_SYSCALL,
 #endif
-                (void *) 1, signo));
+                pid, (void *) 1, signo));
 
         if (!pt_wait(pid, &status)) return 0;
 
