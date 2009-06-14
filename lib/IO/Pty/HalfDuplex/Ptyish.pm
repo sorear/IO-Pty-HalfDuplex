@@ -243,10 +243,10 @@ sub _process_wait {
 
 # Send as much data as possible
 sub _process_send {
-    my ($self, $noi) = @_;
+    my ($self, $draining) = @_;
 
-    $self->_select_loop(0 => sub{ $self->{write_buffer} ne '' },
-        [ $self->{info_pipe}, r => sub { $self->_handle_info_read() }, $noi ],
+    $self->_select_loop(0 => sub{ $draining || $self->{write_buffer} ne '' },
+        [ $self->{info_pipe}, r => sub { $self->_handle_info_read() }, !$draining ],
         [ $self->{pty}, r => sub { $self->_handle_pty_read() } ],
         [ $self->{pty}, w => sub { $self->_handle_pty_write() } ]);
 }
