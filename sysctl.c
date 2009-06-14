@@ -3,16 +3,24 @@
 #include <sys/user.h>
 #include <string.h>
 
+#ifdef __FreeBSD__
+#define KIP kinfo_proc
+#define GETKIP KERN_PROC
+#else
+#define KIP kinfo_proc2
+#define GETKIP KERN_PROC2
+#endif
+
 int
 iphd_sysctl_is_waiting(int pid)
 {
-    struct kinfo_proc kip;
+    struct KIP kip;
     size_t kipsz = sizeof(kip);
     int addr[4];
     int err;
 
     addr[0] = CTL_KERN;
-    addr[1] = KERN_PROC;
+    addr[1] = GETKIP;
     addr[2] = KERN_PROC_PID;
     addr[3] = pid;
 
@@ -23,5 +31,15 @@ iphd_sysctl_is_waiting(int pid)
         return 0;
     }
 
-    return kip.ki_stat == 'S' && !strcmp(kip.ki_wmesg, "ttyin");
+#ifdef __FreeBSD__
+    return kip.ki_stat == SSLEEP && !strcmp(kip.ki_wmesg, "ttyin");
+#else
+    return kip.p_stat == SSLEEP && !strcmp(kip.p_wmesg,
+#ifdef __NetBSD__
+            "ttyraw"
+#else
+            "ttyin"
+#endif
+            );
+#endif
 }
