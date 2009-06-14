@@ -167,7 +167,7 @@ sub _handle_info_read {
         $self->{active} = 0;
         # FreeBSD 7 (and presumably other BSDkin) requires the pty output
         # buffer to be drained before any session leader can exit.
-        $self->_process_send(1);
+        $self->_handle_pty_drain;
         # Reap the shell
         waitpid($self->{shell_pid}, 0);
 
@@ -206,6 +206,24 @@ sub _handle_pty_read {
 
     die "read(pty): $!";
 }
+
+sub _handle_pty_drain {
+    my ($self) = @_;
+
+    while (1) {
+        my $got = sysread $self->{pty}, $self->{read_buffer},
+            $self->{buffer_size}, length $self->{read_buffer});
+
+        return if defined $got && $got == 0;
+        next if defined $got;
+
+        # Under Linux, any pty read can randomly return EIO if the
+        # session leader exits racily.
+        return if $! == &POSIX::EIO and $^O eq "linux";
+
+        die "drain(pty): $!";
+    }
+}
 # }}}
 # Read internals {{{
 # A little something to make all these select loops nicer
@@ -243,10 +261,10 @@ sub _process_wait {
 
 # Send as much data as possible
 sub _process_send {
-    my ($self, $draining) = @_;
+    my ($self) = @_;
 
-    $self->_select_loop(0 => sub{ $draining || $self->{write_buffer} ne '' },
-        [ $self->{info_pipe}, r => sub { $self->_handle_info_read() }, !$draining ],
+    $self->_select_loop(0 => sub{ $self->{write_buffer} ne '' },
+        [ $self->{info_pipe}, r => sub { $self->_handle_info_read() } ],
         [ $self->{pty}, r => sub { $self->_handle_pty_read() } ],
         [ $self->{pty}, w => sub { $self->_handle_pty_write() } ]);
 }
