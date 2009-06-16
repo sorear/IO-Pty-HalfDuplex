@@ -34,3 +34,6 @@
 HalfDuplex.xs$
 \.o$
 \.exe$
+HalfDuplex.bs$
+kdump.out$
+ktrace.out$
