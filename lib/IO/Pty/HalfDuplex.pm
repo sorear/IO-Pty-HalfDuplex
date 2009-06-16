@@ -112,13 +112,9 @@ sub _probe_backends {
 
     return 'JobControl' unless $^O =~ /bsd/i;
 
-    for my $back (qw/PTrace SysctlPoll JobControl/) {
-        eval "local \$SIG{__DIE__}; require IO::Pty::HalfDuplex::$back; 1"
-            and return $back;
-    }
-    
-    # it shouldn't be possible to get here
-    die $@;
+    return 'PTrace'     if IO::Pty::HalfDuplex::PTrace->can('_fork_traced');
+    return 'SysctlPoll' if IO::Pty::HalfDuplex::SysctlPoll->can('_is_active');
+    return 'JobControl';
 }
 
 sub new {
