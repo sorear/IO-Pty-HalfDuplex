@@ -7,63 +7,35 @@ all_from 'lib/IO/Pty/HalfDuplex.pm';
 requires 'IO::Pty';
 requires 'Time::HiRes';
 
-# This is slightly evil.  All the XS in IO-Pty-HalfDuplex is _optional_,
-# so we try to build it, and remove it from the Makefile if it fails.
+my @chunks;
 
-my @chunks = qw(ptrace sysctl);
+# XXX it would be nice if we could usefully probe for what works, but
+# the source files need #ifdefs of their own
+
+# be careful here; arch names depend on OS
+# linux stupidly uses CPU model name.  who wants to regex every x86 model?
+push @chunks, 'ptrace' if $^O eq 'freebsd' &&
+    $Config{archname} =~ /i386|amd64/;
+
+push @chunks, 'sysctl' if grep { $_ eq $^O } qw/freebsd netbsd openbsd/;
+
 my @object;
 my @c;
-my @using;
 my $xs = '';
 
-print <<NOTE ;
-Makefile.PL is now attempting to determine which XS-based IO::Pty::HalfDuplex
-backends will compile on your system ...
-
-NOTE
-
-open OLD_STDOUT, ">&STDOUT";
-open OLD_STDERR, ">&STDERR";
-
-open STDOUT, ">configure.log";
-open STDERR, ">&STDOUT";
-
-print STDOUT <<NOTE ;
-These are the results of configuration probes; any errors here will not
-prevent IO::Pty::HalfDuplex from building.
-
-NOTE
-
-makemaker_args(OBJECT => join(" ", map { "$_.o" } @chunks));
-WriteAll;
-
 for my $chunk (@chunks) {
-    my $src = "$chunk.c";
-    my $obj = "$chunk$Config{_o}";
+    push @c, "$chunk.c";
+    push @object, "$chunk$Config{_o}";
 
-    unlink $obj;  # no error check
-
-    print "Trying to build $obj ...\n";
-
-    if (system("make $obj") == 0 && -s $obj) {
-        # Oooh, it works
-        local $/;
-        open FRAGMENT, "$chunk.xsf" or die
-            "Failed to open fragment $chunk.xsf: $!";
-        $xs .= "\n" . <FRAGMENT>;
-        close FRAGMENT;
-
-        push @object, $obj;
-        push @c, $src;
-        push @using, $chunk;
-    }
+    local $/;
+    open FRAGMENT, "$chunk.xsf" or die
+        "Failed to open fragment $chunk.xsf: $!";
+    $xs .= "\n" . <FRAGMENT>;
+    close FRAGMENT;
 }
 
-open STDOUT, ">&OLD_STDOUT"; close OLD_STDOUT;
-open STDERR, ">&OLD_STDERR"; close OLD_STDERR;
-
-print "Done.  We are building ",
-    (@using ? "with: " . join(", ", @using) : "without XS") . ".\n";
+print "We are building ",
+    (@chunks ? "with: " . join(", ", @chunks) : "without XS") . ".\n";
 
 if ($xs) {
     open XS, ">HalfDuplex.xs" or
