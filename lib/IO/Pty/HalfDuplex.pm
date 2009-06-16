@@ -112,8 +112,8 @@ sub _probe_backends {
 
     return 'JobControl' unless $^O =~ /bsd/i;
 
-    return 'PTrace'     if IO::Pty::HalfDuplex::PTrace->can('_fork_traced');
     return 'SysctlPoll' if IO::Pty::HalfDuplex::SysctlPoll->can('_is_active');
+    return 'PTrace'     if IO::Pty::HalfDuplex::PTrace->can('_fork_traced');
     return 'JobControl';
 }
 
