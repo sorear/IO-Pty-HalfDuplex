@@ -3,6 +3,7 @@ use Config;
 
 name     'IO-Pty-HalfDuplex';
 all_from 'lib/IO/Pty/HalfDuplex.pm';
+repository 'http://github.com/sorear/IO-Pty-HalfDuplex';
 
 requires 'IO::Pty';
 requires 'Time::HiRes';
