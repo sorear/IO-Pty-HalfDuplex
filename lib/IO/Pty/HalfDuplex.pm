@@ -77,7 +77,9 @@ our $VERSION = '0.02';
 
 Allocates and returns a IO::Pty::HalfDuplex object.  The named argument
 'backend' selects a backend, other arguments, if any, are in the backend's
-documentation.  Currently supported backends:
+documentation.  If the backend is not specified, one will be defaulted based
+on platform, or using C<$ENV{IO_PTY_HALFDUPLEX_BACKEND}> if it exists.
+Currently supported backends:
 
 =over 2
 
@@ -85,8 +87,13 @@ documentation.  Currently supported backends:
 
 Using POSIX job control.  Theoretically portable to all UNIXes, in practice
 bugs require workarounds on many systems.  Most BSDs (but not recent Darwin)
-have a kernel bug which makes this unusably slow (several seconds per read).
+have a kernel issue which makes this unusably slow (several seconds per read).
 The default on UNIX.
+
+=item SysctlPoll
+
+Using BSD-style C<sysctl> process access.  The default on FreeBSD, OpenBSD,
+and NetBSD.
 
 =item PTrace
 
