@@ -206,15 +206,6 @@ programs like C<qemu> and C<telnet> cannot be expected to ever work with this.
 
 Each backend has its own long list of caveats; see the relevant documentation.
 
-=head1 PORTABILITY AND PORTING
-
-Generally, the build system should be able to figure out what can work on your
-system, because it actually tries to build things.  If you have the development
-files for a backend but it doesn't actually work, you may need to override
-runtime selection with an environment variable.  For adding new backends,
-follow the model of the existing ones; see t/thdmp.c for a special test for
-DOS/Windows attempts.
-
 =head1 SEE ALSO
 
 L<IO::Pty::HalfDuplex::JobControl> and related modules.  L<IO::Pty::Easy>.
