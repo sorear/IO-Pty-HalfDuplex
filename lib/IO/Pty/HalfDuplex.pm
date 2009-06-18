@@ -221,8 +221,8 @@ Stefan O'Rear, C<< <stefanor@cox.net> >>
 No known bugs.
 
 Please report any bugs through RT: email
-C<bug-io-halfduplex at rt.cpan.org>, or browse
-L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=IO-HalfDuplex>.
+C<bug-io-pty-halfduplex at rt.cpan.org>, or browse
+L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=IO-Pty-HalfDuplex>.
 
 =head1 COPYRIGHT AND LICENSE
 
